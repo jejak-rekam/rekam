@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.0.2',
+  VERSI: '1.0.3',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-2.5-flash',          // model utama (bisa diganti di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-latest', // dipakai kalau model utama tidak tersedia
@@ -632,8 +632,8 @@ R.atur = () => {
   <p class="hint" style="text-align:center">Jejak versi ${CONFIG.VERSI}</p>`;
   $('#lihatKunci').onchange = e => $('#kunci').type = e.target.checked ? 'text' : 'password';
   $('#bKunci').onclick = e => tombolProses(e.currentTarget, 'Sedang mengecek kunci…', async () => {
-    const k = $('#kunci').value.trim(), md = $('#model').value.trim() || CONFIG.MODEL, err = $('#errKunci'); err.hidden = true;
-    if (!/^[\w-]{20,80}$/.test(k)) { err.textContent = 'Kunci tidak sesuai format. Salin ulang dari AI Studio.'; err.hidden = false; return; }
+    const k = $('#kunci').value.replace(/^[\s"']+|[\s"']+$/g, ''), md = $('#model').value.trim() || CONFIG.MODEL, err = $('#errKunci'); err.hidden = true;
+    if (!/^[A-Za-z0-9._~+\/=-]{20,200}$/.test(k)) { err.textContent = /\s/.test(k) ? 'Kunci ada spasi atau baris baru di tengahnya. Salin ulang dari AI Studio.' : 'Kunci terlalu pendek atau ada huruf aneh. Salin ulang dari AI Studio.'; err.hidden = false; return; }
     if (!/^[\w.-]{3,60}$/.test(md)) { err.textContent = 'Nama model tidak sesuai.'; err.hidden = false; return; }
     const lama = S0.kunci; S0.kunci = k;
     try { await panggil('/v1beta/models?pageSize=1'); }
