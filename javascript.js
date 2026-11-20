@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.0.3',
+  VERSI: '1.0.4',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-2.5-flash',          // model utama (bisa diganti di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-latest', // dipakai kalau model utama tidak tersedia
@@ -395,6 +395,7 @@ R.baru = q => {
   };
   if (!rekam) { $('#pilihFile').onclick = () => $('#fileIn').click(); $('#fileIn').onchange = e => { const f = e.target.files[0]; if (f) pasang(f, f.name); }; }
   else pasangPerekam(pasang);
+  if (!rekam && q.get('dibagikan')) ambilKiriman(pasang);
   $('#btnRangkum').onclick = () => {
     const n = nama.value.trim().replace(/\s+/g, ' ');
     if (!n) { errN.textContent = 'Tulis dulu nama orangnya.'; errN.hidden = false; nama.focus(); return; }
@@ -404,6 +405,18 @@ R.baru = q => {
     buka('#/proses');
   };
 };
+
+/* Rekaman yang dikirim lewat tombol Bagikan (Android) */
+async function ambilKiriman(pasang) {
+  try {
+    const c = await caches.open('jejak-bagikan'), url = new URL('./bagikan-file', location.href).href, r = await c.match(url);
+    if (!r) return toast('Rekaman tidak ikut terkirim. Coba Bagikan lagi atau pilih file.', 4000);
+    const nama = decodeURIComponent(r.headers.get('x-nama') || 'rekaman'), blob = await r.blob();
+    await pasang(new Blob([blob], { type: r.headers.get('content-type') || '' }), nama);
+    await c.delete(url); history.replaceState(null, '', '#/baru?cara=unggah');
+    toast('Rekaman sudah masuk. Tulis nama, lalu Rangkum.'); $('#nama').focus();
+  } catch { toast('Gagal membaca rekaman kiriman. Pilih file secara manual.', 4000); }
+}
 
 /* ---- Perekam di dalam aplikasi ---- */
 const REC = { aktif: false };
@@ -680,6 +693,7 @@ function rapikanLama(h) { const r = rapikan(h || {}); r.tugas = r.tugas.map((t, 
   try { await muatData(); } catch (e) { console.error(e); $('#app').innerHTML = '<div class="kotak clay kosong">Penyimpanan HP tidak bisa dibuka. Pastikan tidak memakai mode penyamaran (incognito).</div>'; return; }
   perbaruiLencana();
   navigator.storage?.persist?.().catch(() => {});
+  if (new URLSearchParams(location.search).has('dibagikan')) history.replaceState(null, '', location.pathname + '#/baru?cara=unggah&dibagikan=1');
   addEventListener('hashchange', jalan); jalan();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 })();
