@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.0.5',
+  VERSI: '1.0.6',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-2.5-flash',          // model utama (bisa diganti di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-latest', // dipakai kalau model utama tidak tersedia
@@ -192,31 +192,64 @@ Aturan:
 - transkrip: tulis lengkap per giliran bicara, dengan waktu dan nama pembicara (pakai nama kalau disebut, kalau tidak "Pembicara 1", "Pembicara 2"). Untuk kalimat bahasa Jawa, tulis aslinya lalu artinya dalam kurung.
 - Kalau tidak ada isinya, kirim daftar kosong.${j.tanpaTranskrip ? '\n- PENTING: transkrip kirim sebagai daftar kosong [] supaya jawaban tidak terlalu panjang.' : ''}`;
 }
+/* Jawaban AI dikirim sedikit demi sedikit (streaming) supaya sambungan tidak "diam" lalu diputus jaringan */
+async function mintaRingkasan(m, body, onTeks) {
+  const ac = new AbortController(); let alasan = '', jam;
+  const pasangJam = (ms, a) => { clearTimeout(jam); jam = setTimeout(() => { alasan = a; ac.abort(); }, ms); };
+  pasangJam(8 * 60000, 'awal'); // menunggu Google selesai mendengarkan rekaman
+  let r;
+  try { r = await fetch(`${CONFIG.API}/v1beta/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, { method: 'POST', signal: ac.signal, headers: { 'x-goog-api-key': S0.kunci, 'Content-Type': 'application/json' }, body }); }
+  catch { clearTimeout(jam); const e = new GagalAI(alasan ? 'Google terlalu lama menjawab. Tekan Coba lagi (tidak perlu unggah ulang).' : pesanError(0)); e.status = alasan ? 'waktu' : 0; throw e; }
+  if (!r.ok) { clearTimeout(jam); const t = await r.text().catch(() => ''); console.warn('Gemini', r.status, t); const e = new GagalAI(pesanError(r.status, t)); e.status = r.status; throw e; }
+  const baca = r.body.getReader(), dek = new TextDecoder(); let sisa = '', teks = '', blok = '';
+  try {
+    for (;;) {
+      pasangJam(2 * 60000, 'diam'); // kalau 2 menit tidak ada kiriman sama sekali, anggap putus
+      const { value, done } = await baca.read(); if (done) break;
+      sisa += dek.decode(value, { stream: true });
+      const baris = sisa.split('\n'); sisa = baris.pop();
+      for (const b of baris) {
+        if (!b.startsWith('data:')) continue;
+        let d; try { d = JSON.parse(b.slice(5)); } catch { continue; }
+        if (d.error) { const e = new GagalAI(pesanError(d.error.code || 500, d.error.message)); e.status = d.error.code || 500; throw e; }
+        if (d.promptFeedback?.blockReason) throw new GagalAI('Rekaman ditolak oleh AI. Coba rekaman lain.');
+        for (const p of d.candidates?.[0]?.content?.parts || []) { if (p.thought) blok = 'mikir'; else if (p.text) { teks += p.text; blok = 'tulis'; } }
+        onTeks(teks.length, blok);
+      }
+    }
+  } catch (e) {
+    if (e instanceof GagalAI) throw e;
+    const x = new GagalAI(alasan ? 'Sambungan ke Google terputus. Tekan Coba lagi (tidak perlu unggah ulang).' : pesanError(0)); x.status = alasan ? 'waktu' : 0; throw x;
+  } finally { clearTimeout(jam); }
+  return teks;
+}
 async function rangkum(file, j, tanpaTranskrip = j.durasi > 45 * 60) { // rekaman > 45 menit: tanpa transkrip supaya tidak kepanjangan
   const body = t => JSON.stringify({
     contents: [{ role: 'user', parts: [{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt({ ...j, tanpaTranskrip: t }) }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 65536, temperature: 0.3, thinkingConfig: { thinkingBudget: 1024 } }
+    generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 65536, temperature: 0.3, thinkingConfig: { thinkingBudget: 512, includeThoughts: true } }
   });
-  const kirim = (m, t) => panggil(`/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(t) });
   const tunggu = d => new Promise(s => setTimeout(s, d));
-  // coba otomatis sampai 4 kali kalau server Google sibuk: jeda bertambah, lalu tanpa transkrip, lalu model cadangan
+  const target = t => t ? 5000 : 5000 + (j.durasi || 600) * 12; // perkiraan panjang jawaban, hanya untuk bar
+  const kemajuan = t => (n, blok) => {
+    if (blok === 'mikir' && !n) return setTahap('Mencari poin penting…', 65);
+    if (n) setTahap('Menulis kartu…', Math.min(95, 70 + 25 * n / target(t)), 'Jawaban sedang diterima. Jangan tutup aplikasi.');
+  };
+  // kalau server Google sibuk, coba otomatis: jeda bertambah, lalu tanpa transkrip, lalu model cadangan
   const rencana = [[S0.model, tanpaTranskrip, 0], [S0.model, true, 8000], [S0.model, true, 20000], [CONFIG.MODEL_CADANGAN, true, 5000]];
-  let r, galat, pakaiTanpa = tanpaTranskrip;
+  let teks, galat, pakaiTanpa = tanpaTranskrip;
   for (const [m, t, jeda] of rencana) {
-    if (jeda) { setTahap('Server sibuk, mencoba lagi otomatis…', 85, 'Tidak perlu menekan apa-apa, tunggu sebentar.'); await tunggu(jeda); }
-    try { r = await kirim(m, t); pakaiTanpa = t; break; }
+    if (jeda) { setTahap('Server sibuk, mencoba lagi otomatis…', 60, 'Tidak perlu menekan apa-apa, tunggu sebentar.'); await tunggu(jeda); }
+    try { teks = await mintaRingkasan(m, body(t), kemajuan(t)); pakaiTanpa = t; break; }
     catch (e) {
       galat = e;
-      if (e.status === 404 && m !== CONFIG.MODEL_CADANGAN) { try { r = await kirim(CONFIG.MODEL_CADANGAN, t); pakaiTanpa = t; break; } catch (e2) { galat = e2; } }
-      if (!(e.status >= 500 || e.status === 429 || e.status === undefined)) throw e; // salah kunci dll: jangan diulang
+      if (e.status === 404 && m !== CONFIG.MODEL_CADANGAN) { try { teks = await mintaRingkasan(CONFIG.MODEL_CADANGAN, body(t), kemajuan(t)); pakaiTanpa = t; break; } catch (e2) { galat = e2; } }
+      if (!(galat.status >= 500 || galat.status === 429)) throw galat; // putus/terlalu lama/salah kunci: langsung tampilkan tombol Coba lagi
     }
   }
-  if (!r) throw galat;
-  const d = await r.json(), c = d.candidates?.[0];
-  const teks = (c?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
-  if (!teks) throw new GagalAI(d.promptFeedback?.blockReason ? 'Rekaman ditolak oleh AI. Coba rekaman lain.' : 'AI tidak memberi jawaban. Coba lagi.');
+  if (teks === undefined) throw galat;
+  if (!teks) throw new GagalAI('AI tidak memberi jawaban. Coba lagi.');
   let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
-  if (!o) { // jawaban terlalu panjang (biasanya karena transkrip): ulangi sekali tanpa transkrip
+  if (!o) { // jawaban terpotong (biasanya karena transkrip): ulangi sekali tanpa transkrip
     if (!pakaiTanpa) return rangkum(file, j, true);
     throw new GagalAI('Jawaban AI terpotong. Coba lagi.');
   }
@@ -477,7 +510,7 @@ function setTahap(teks, persen, sub) {
   const l = $('#pLbl'); if (!l) return;
   l.textContent = teks; $('#pBar').style.width = Math.round(persen) + '%';
   $('#pSub').textContent = sub || 'Jangan tutup aplikasi dulu, ya.';
-  clearTimeout(lamaT); lamaT = setTimeout(() => { if ($('#pSub')) $('#pSub').textContent = 'Masih diproses, mohon tunggu sebentar. Rekaman panjang bisa 3–5 menit.'; }, 12000);
+  clearTimeout(lamaT); lamaT = setTimeout(() => { if ($('#pSub')) $('#pSub').textContent = 'Masih diproses, mohon tunggu sebentar. Rekaman panjang bisa sampai 10 menit.'; }, 12000);
 }
 const jagaTutup = e => { e.preventDefault(); e.returnValue = ''; };
 async function prosesJalan() {
@@ -487,9 +520,8 @@ async function prosesJalan() {
       setTahap('Mengirim rekaman…', 3);
       j.file = await unggahKeGemini(j.blob, j.mime, f => setTahap(`Mengirim rekaman… ${Math.round(f * 100)}%`, 3 + f * 42));
     }
-    setTahap('Mendengarkan obrolan…', 50);
-    const tik = setInterval(() => { const b = $('#pBar'); if (!b) return clearInterval(tik); const w = parseFloat(b.style.width) || 50; if (w < 92) { b.style.width = (w + 1.5) + '%'; if (w > 70) $('#pLbl').textContent = 'Menyusun kartu…'; else if (w > 60) $('#pLbl').textContent = 'Mencari poin penting…'; } }, 2500);
-    let hasil; try { hasil = await rangkum(j.file, j); } finally { clearInterval(tik); }
+    setTahap('Mendengarkan obrolan…', 50, j.durasi > 30 * 60 ? 'Rekaman panjang: Google perlu beberapa menit untuk mendengarkan. Jangan tutup aplikasi.' : '');
+    const hasil = await rangkum(j.file, j);
     setTahap('Menyimpan…', 96);
     let o = S0.orang.find(x => x.nama.toLowerCase() === j.nama.toLowerCase());
     const orangBaru = !o; if (!o) o = { id: uid(), nama: j.nama, warna: WARNA[S0.orang.length % 5], dibuat: Date.now() };
