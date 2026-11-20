@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.1.0',
+  VERSI: '1.1.2',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -224,27 +224,43 @@ async function mintaRingkasan(m, body, onTeks) {
   } finally { clearTimeout(jam); }
   return teks;
 }
+/* Model yang dicoba: pilihan di Atur dulu, lalu model lain yang tersedia untuk kunci ini. Model yang kuotanya penuh dilewati otomatis */
+const PENUH = new Set(); let daftarModel = null;
+async function calonModel() {
+  if (!daftarModel) {
+    try {
+      const v = n => parseFloat((n.match(/(\d+(\.\d+)?)/) || [0, 0])[1]);
+      daftarModel = ((await (await panggil('/v1beta/models?pageSize=200')).json()).models || [])
+        .filter(m => (m.supportedGenerationMethods || ['generateContent']).includes('generateContent')).map(m => m.name.replace('models/', ''))
+        .filter(n => /^gemini/.test(n) && !/tts|image|embed|live|audio|thinking|computer|robotics|exp/.test(n))
+        .sort((a, b) => (/flash/.test(b) - /flash/.test(a)) || (/lite/.test(a) - /lite/.test(b)) || (v(b) - v(a)));
+    } catch { daftarModel = []; }
+  }
+  return [...new Set([S0.model, ...daftarModel, CONFIG.MODEL_CADANGAN])].filter(m => !PENUH.has(m)).slice(0, 8);
+}
 async function mintaJSON(isi, maju) { // kirim ke AI, terima ringkasan berbentuk data
-  let pikir = { thinkingBudget: 512, includeThoughts: true };
+  let pikir = { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
   const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 32768, temperature: 0.3, ...(pikir ? { thinkingConfig: pikir } : {}) } });
   const tunggu = d => new Promise(s => setTimeout(s, d));
-  // server sibuk (kode 5xx): coba otomatis dengan jeda, lalu model cadangan. Kuota penuh/putus: tidak diulang supaya kuota tidak terbuang
-  const rencana = [[S0.model, 0], [S0.model, 8000], [S0.model, 20000], [CONFIG.MODEL_CADANGAN, 5000]];
-  let teks, galat;
-  for (const [m, jeda] of rencana) {
-    if (jeda) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Tidak perlu menekan apa-apa, tunggu sebentar.'); await tunggu(jeda); }
-    try { teks = await mintaRingkasan(m, body(), maju); break; }
-    catch (e) {
-      galat = e;
-      if (e.status === 400 && pikir && /think/i.test(e.detail || '')) { pikir = null; try { teks = await mintaRingkasan(m, body(), maju); break; } catch (e3) { galat = e3; } }
-      if (galat.status === 404 && m !== CONFIG.MODEL_CADANGAN) { try { teks = await mintaRingkasan(CONFIG.MODEL_CADANGAN, body(), maju); break; } catch (e2) { galat = e2; } }
-      if (!(galat.status >= 500)) throw galat;
+  for (const m of await calonModel()) {
+    for (let coba = 0; coba < 2; coba++) {
+      try {
+        const teks = await mintaRingkasan(m, body(), maju);
+        let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
+        if (!o) throw new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.');
+        return rapikan(o);
+      } catch (e) {
+        galat = e;
+        if (e.status === 400 && pikir && /think/i.test(e.detail || '')) { pikir = null; coba--; continue; } // model ini tidak mendukung pengaturan berpikir
+        if (e.status === 429 || e.status === 404) { PENUH.add(m); setTahap('Kuota model penuh, pindah ke model lain…', null, `Otomatis, tidak perlu menekan apa-apa. (${m} dilewati)`); break; }
+        semuaPenuh = false;
+        if (e.status >= 500) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Tidak perlu menekan apa-apa, tunggu sebentar.'); await tunggu(coba ? 15000 : 6000); continue; }
+        throw e; // putus, terlalu lama, atau kunci salah: tampilkan tombol Coba lagi
+      }
     }
   }
-  if (teks === undefined) throw galat;
-  let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
-  if (!o) throw new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.');
-  return rapikan(o);
+  if (galat?.status === 429 && semuaPenuh) { PENUH.clear(); throw Object.assign(new GagalAI('Kuota gratis semua model sedang penuh. Coba lagi beberapa menit lagi; kalau tetap penuh, biasanya pulih besok sekitar jam 3 sore. (kode 429)'), { status: 429 }); }
+  throw galat || new GagalAI('Gagal memproses. Coba lagi.');
 }
 const maju = (lo, hi, label = '') => (n, blok) => { // bar kemajuan mengikuti jawaban yang benar-benar diterima
   if (!n) return blok === 'mikir' && setTahap(label + 'Mencari poin penting…', lo + (hi - lo) * 0.3);
@@ -701,14 +717,14 @@ R.hasil = id => {
     document.querySelectorAll('.k1').forEach(k => k.hidden = f >= 0 && +k.dataset.bag !== f);
   });
   $('#bSimpan').onclick = e => tombolProses(e.currentTarget, 'Sedang membuat gambar…', async () => {
-    const f = await gambarPoster(m, o).catch(() => null); if (!f) return toast('Gagal membuat gambar. Coba lagi.');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast('Gambar disimpan');
+    const fs = await gambarPoster(m, o).catch(e => { console.error(e); return null; }); if (!fs) return toast('Gagal membuat gambar. Coba lagi.');
+    for (const f of fs) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 8000); await new Promise(s => setTimeout(s, 500)); }
+    toast(fs.length > 1 ? `${fs.length} gambar disimpan` : 'Gambar disimpan');
   });
   $('#bKirim').onclick = e => tombolProses(e.currentTarget, 'Sedang menyiapkan…', async () => {
-    const f = await gambarPoster(m, o).catch(() => null);
+    const fs = await gambarPoster(m, o).catch(() => null);
     const teks = `Ringkasan meeting dengan ${o.nama} (${tglPendek(m.tanggal)})\n${h.judul}\n\n${h.poin.map((p, i) => `${i + 1}. ${p.judul}: ${p.isi}`).join('\n')}${h.tugas.length ? `\n\nTugas:\n${h.tugas.map(t => `${t.selesai ? '✓' : '☐'} ${t.apa}${t.siapa || t.kapan ? ` (${[t.siapa, t.kapan].filter(Boolean).join(', ')})` : ''}`).join('\n')}` : ''}${h.penutup ? `\n\nLangkah berikutnya: ${h.penutup}` : ''}`;
-    if (f && navigator.canShare?.({ files: [f] })) { try { await navigator.share({ files: [f], text: teks }); } catch {} return; }
+    if (fs && navigator.canShare?.({ files: fs })) { try { await navigator.share({ files: fs, text: teks }); } catch {} return; }
     window.open('https://wa.me/?text=' + encodeURIComponent(teks), '_blank', 'noopener');
   });
   $('#bHapus').onclick = e => tombolProses(e.currentTarget, 'Sedang menghapus…', async () => {
@@ -735,96 +751,101 @@ function petaSvg(h) {
 
 /* Gambar poster (PNG) untuk disimpan / dikirim */
 const muatGambar = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
-async function gambarPoster(m, o) { // satu gambar panjang berisi semua bagian ringkasan
-  const h = m.hasil, W = 1080, pad = 48, gap = 24, kw = (W - pad * 2 - gap) / 2, iw = W - pad * 2 - 80;
+async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun beberapa kolom berdampingan supaya tidak memanjang
+  const h = m.hasil, W = 1080, pad = 48, gap = 22, kw = (W - pad * 2 - gap) / 2, iw = W - pad * 2 - 80, X0 = pad + 40;
   await document.fonts?.load?.('900 40px Nunito').catch(() => {});
-  const cv = document.createElement('canvas'), x = cv.getContext('2d');
+  const ukur = document.createElement('canvas').getContext('2d');
   const F = (s, w = 800) => `${w} ${s}px Nunito, system-ui, sans-serif`;
-  const bungkus = (t, maks, font) => { x.font = font; const out = []; let l = ''; String(t || '').split(/\s+/).forEach(w => { const c = l ? l + ' ' + w : w; if (x.measureText(c).width > maks && l) { out.push(l); l = w; } else l = c; }); if (l) out.push(l); return out; };
+  const bungkus = (t, maks, font) => { ukur.font = font; const out = []; let l = ''; String(t || '').split(/\s+/).forEach(w => { const c = l ? l + ' ' + w : w; if (ukur.measureText(c).width > maks && l) { out.push(l); l = w; } else l = c; }); if (l) out.push(l); return out; };
+  const gbr = s => muatGambar('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ' + (/^<svg[^>]* width=/.test(s) ? '' : 'width="96" height="96" '))));
+  const anjing = await muatGambar('./ippo.webp').catch(() => null);
+  let x; // kanvas halaman yang sedang digambar
   const kotak = (X, Y, w, hh, r, c) => { x.fillStyle = c; x.beginPath(); x.roundRect(X, Y, w, hh, r); x.fill(); };
   const tulis = (baris, X, Y, font, warna, jarak) => { x.font = font; x.fillStyle = warna; baris.forEach((l, i) => x.fillText(l, X, Y + i * jarak)); };
-  const gbr = s => muatGambar('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ' + (/^<svg[^>]* width=/.test(s) ? '' : 'width="96" height="96" '))));
   const blok = [];
-  // kepala
-  const jdl = bungkus(h.judul, 470, F(64, 900)), inti = bungkus(h.inti, 470, F(30, 700)), tK = Math.max(420, 110 + jdl.length * 70 + inti.length * 40 + 40);
+  // kepala (judul + inti + anjing)
+  const jdl = bungkus(h.judul, 470, F(60, 900)), inti = bungkus(h.inti, 470, F(28, 700)), tK = Math.max(380, 150 + jdl.length * 66 + inti.length * 38 + 30);
   blok.push({ h: tK, g: async y => {
     kotak(pad, y, W - pad * 2, tK, 56, '#F6CDB8');
-    try { const im = await muatGambar('./ippo.webp'), s = Math.min(470, (tK - 24) * im.width / im.height); x.drawImage(im, W - pad - s + 20, y + tK - s * im.height / im.width - 10, s, s * im.height / im.width); } catch {}
-    tulis(['RINGKASAN MEETING · ' + o.nama.toUpperCase()], pad + 44, y + 80, F(26, 900), '#8A3E22', 0);
-    tulis(jdl, pad + 44, y + 180, F(64, 900), '#4A2A1C', 70);
-    tulis(inti, pad + 44, y + 196 + jdl.length * 70, F(30, 700), '#6E4A38', 40);
+    if (anjing) { const s = Math.min(440, (tK - 24) * anjing.width / anjing.height); x.drawImage(anjing, W - pad - s + 20, y + tK - s * anjing.height / anjing.width - 10, s, s * anjing.height / anjing.width); }
+    tulis(['RINGKASAN MEETING · ' + o.nama.toUpperCase()], pad + 44, y + 74, F(24, 900), '#8A3E22', 0);
+    tulis(jdl, pad + 44, y + 160, F(60, 900), '#4A2A1C', 66);
+    tulis(inti, pad + 44, y + 172 + jdl.length * 66, F(28, 700), '#6E4A38', 38);
   } });
-  // kartu poin
+  // kartu poin, satu baris (2 kartu) = satu blok supaya bisa pindah halaman
   const isiK = h.poin.map(p => ({ t: bungkus(p.judul, kw - 110, F(34, 900)), d: bungkus(p.isi, kw - 48, F(28, 700)) }));
-  const tinggi = isiK.map(k => 96 + k.t.length * 40 + k.d.length * 36 + 130), baris = [];
-  for (let i = 0; i < tinggi.length; i += 2) baris.push(Math.max(tinggi[i], tinggi[i + 1] || 0));
-  if (baris.length) blok.push({ h: baris.reduce((a, b) => a + b + gap, -gap), g: async y0 => {
-    let y = y0;
-    for (let i = 0; i < h.poin.length; i++) {
-      const p = h.poin[i], c = WARNA[i % 5], col = i % 2, X = pad + col * (kw + gap), hh = baris[Math.floor(i / 2)], k = isiK[i];
-      kotak(X, y, kw, hh, 40, PASTEL[c]);
-      tulis([String(p.bagian || '').toUpperCase()], X + 28, y + 50, F(20, 900), TEKS[c], 0);
-      x.fillStyle = HEX[c]; x.beginPath(); x.arc(X + 58, y + 98, 30, 0, 7); x.fill();
-      x.textAlign = 'center'; tulis([String(i + 1)], X + 58, y + 110, F(32, 900), '#fff', 0); x.textAlign = 'left';
-      tulis(k.t, X + 104, y + 120, F(34, 900), '#4A3428', 40);
-      tulis(k.d, X + 28, y + 132 + k.t.length * 40, F(28, 700), TEKS[c], 36);
-      try { x.drawImage(await gbr(`<svg viewBox="0 0 70 56" width="140" height="112">${ILL[p.ikon] || ILL.ide}</svg>`), X + kw - 160, y + hh - 128, 140, 112); } catch {}
-      if (col === 1 || i === h.poin.length - 1) y += hh + gap;
-    }
-  } });
-  if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 60; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, '#F6CDB8'); x.textAlign = 'center'; tulis(pt, W / 2, y + 60, F(30, 900), '#6E3420', 40); x.textAlign = 'left'; } }); }
-  // seksi lain: kotak dengan judul dan ikon 3D
-  const seksi = (judul, ikon, c, isiH, isi, latar = '#FBF4EC') => blok.push({ h: 124 + isiH + 30, g: async y => {
-    kotak(pad, y, W - pad * 2, 124 + isiH + 30, 44, latar);
-    kotak(pad + 36, y + 36, 64, 64, 20, HEX[c]); kotak(pad + 44, y + 40, 48, 20, 10, 'rgba(255,255,255,.35)');
-    try { x.drawImage(await gbr(ikon), pad + 50, y + 50, 36, 36); } catch {}
-    tulis([judul], pad + 120, y + 80, F(34, 900), '#4A3428', 0);
-    await isi(y + 124);
-  } });
-  const X0 = pad + 40;
-  if (h.alur.length) {
-    const it = h.alur.map(a => ({ w: a.waktu, t: bungkus(a.judul, iw - 150, F(30, 900)), k: bungkus(a.ket, iw - 150, F(26, 700)) })), tg = it.map(a => a.t.length * 38 + a.k.length * 34 + 24);
-    seksi('Jalannya meeting', svg('jam', '#fff', HEX.blue), 'blue', tg.reduce((a, b) => a + b, 0), async y => {
-      it.forEach((a, i) => { x.fillStyle = PASTEL.blue; x.fillRect(X0 + 128, y - 6, 5, tg[i]); tulis([a.w], X0, y + 26, F(26, 900), HEX.blue, 0); tulis(a.t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(a.k, X0 + 152, y + 26 + a.t.length * 38, F(26, 700), '#7A6152', 34); y += tg[i]; });
-    });
-  }
-  if (h.sepakat.length) {
-    const it = h.sepakat.map(s => bungkus(s, iw - 70, F(28, 800))), tg = it.map(l => l.length * 38 + 18);
-    seksi('Sudah disepakati', svg('star'), 'sage', tg.reduce((a, b) => a + b, 0), async y => {
-      for (let i = 0; i < it.length; i++) { try { x.drawImage(await gbr(svg('ok', HEX.sage)), X0, y, 40, 40); } catch {} tulis(it[i], X0 + 60, y + 30, F(28, 800), '#4A3428', 38); y += tg[i]; }
-    });
-  }
-  if (h.tugas.length) {
-    const it = h.tugas.map(t => ({ l: bungkus(t.apa, iw - 70, F(28, 800)), k: [t.siapa, t.kapan].filter(Boolean).join(' · '), s: t.selesai })), tg = it.map(a => a.l.length * 38 + (a.k ? 34 : 0) + 26);
-    seksi('Tugas', svg('tugas', '#fff', HEX.butter), 'butter', tg.reduce((a, b) => a + b, 0), async y => {
-      for (let i = 0; i < it.length; i++) {
-        const a = it[i];
-        if (a.s) { kotak(X0, y, 40, 40, 12, HEX.sage); try { x.drawImage(await gbr(svg('centang')), X0 + 8, y + 8, 24, 24); } catch {} } else kotak(X0, y, 40, 40, 12, '#EADBCB');
-        tulis(a.l, X0 + 60, y + 30, F(28, 800), a.s ? '#9A8476' : '#4A3428', 38);
-        if (a.s) a.l.forEach((l, n) => { x.font = F(28, 800); x.fillStyle = '#9A8476'; x.fillRect(X0 + 60, y + 20 + n * 38, x.measureText(l).width, 3); });
-        if (a.k) tulis([a.k], X0 + 60, y + 30 + a.l.length * 38, F(24, 700), '#7A6152', 0);
-        y += tg[i];
+  const tinggi = isiK.map(k => 96 + k.t.length * 40 + k.d.length * 36 + 124);
+  for (let r = 0; r < h.poin.length; r += 2) {
+    const hh = Math.max(tinggi[r], tinggi[r + 1] || 0);
+    blok.push({ h: hh, g: async y => {
+      for (let i = r; i < Math.min(r + 2, h.poin.length); i++) {
+        const p = h.poin[i], c = WARNA[i % 5], X = pad + (i % 2) * (kw + gap), k = isiK[i];
+        kotak(X, y, kw, hh, 40, PASTEL[c]);
+        tulis([String(p.bagian || '').toUpperCase()], X + 28, y + 50, F(20, 900), TEKS[c], 0);
+        x.fillStyle = HEX[c]; x.beginPath(); x.arc(X + 58, y + 98, 30, 0, 7); x.fill();
+        x.textAlign = 'center'; tulis([String(i + 1)], X + 58, y + 110, F(32, 900), '#fff', 0); x.textAlign = 'left';
+        tulis(k.t, X + 104, y + 120, F(34, 900), '#4A3428', 40);
+        tulis(k.d, X + 28, y + 132 + k.t.length * 40, F(28, 700), TEKS[c], 36);
+        try { x.drawImage(await gbr(`<svg viewBox="0 0 70 56" width="140" height="112">${ILL[p.ikon] || ILL.ide}</svg>`), X + kw - 160, y + hh - 124, 140, 112); } catch {}
       }
-    });
+    } });
   }
-  if (h.tanya.length) {
-    const it = h.tanya.map(s => bungkus('• ' + s, iw - 20, F(28, 800))), tg = it.map(l => l.length * 38 + 14);
-    seksi('Perlu ditanya', svg('tanya', '#fff', HEX.lilac), 'lilac', tg.reduce((a, b) => a + b, 0), async y => { it.forEach((l, i) => { tulis(l, X0, y + 30, F(28, 800), TEKS.lilac, 38); y += tg[i]; }); }, PASTEL.lilac);
-  }
-  if (h.kutipan.length) {
-    const it = h.kutipan.map(k => ({ a: bungkus(`"${k.asli}"`, iw, F(30, 900)), b: bungkus(k.arti + (k.siapa ? ' — ' + k.siapa : ''), iw, F(26, 700)) })), tg = it.map(k => k.a.length * 40 + k.b.length * 34 + 24);
-    seksi('Kalimat penting', svg('kutip'), 'sage', tg.reduce((a, b) => a + b, 0), async y => { it.forEach((k, i) => { tulis(k.a, X0, y + 30, F(30, 900), '#2F4A3E', 40); tulis(k.b, X0, y + 30 + k.a.length * 40, F(26, 700), TEKS.sage, 34); y += tg[i]; }); }, PASTEL.sage);
-  }
+  if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 56; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, '#F6CDB8'); x.textAlign = 'center'; tulis(pt, W / 2, y + 58, F(30, 900), '#6E3420', 40); x.textAlign = 'left'; } }); }
+  // seksi berisi daftar; kalau tidak muat, sisanya lanjut di halaman berikutnya
+  const seksi = (judul, ikon, c, items, latar = '#FBF4EC') => blok.push({ judul, ikon, c, items, latar });
+  if (h.alur.length) seksi('Jalannya meeting', svg('jam', '#fff', HEX.blue), 'blue', h.alur.map(a => { const t = bungkus(a.judul, iw - 150, F(30, 900)), k = bungkus(a.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PASTEL.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis([a.waktu], X0, y + 26, F(26, 900), HEX.blue, 0); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }));
+  if (h.sepakat.length) seksi('Sudah disepakati', svg('star'), 'sage', h.sepakat.map(s => { const l = bungkus(s, iw - 70, F(28, 800)); return { h: l.length * 38 + 18, g: async y => { try { x.drawImage(await gbr(svg('ok', HEX.sage)), X0, y, 40, 40); } catch {} tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }));
+  if (h.tugas.length) seksi('Tugas', svg('tugas', '#fff', HEX.butter), 'butter', h.tugas.map(t => { const l = bungkus(t.apa, iw - 70, F(28, 800)), k = [t.siapa, t.kapan].filter(Boolean).join(' · '); return { h: l.length * 38 + (k ? 34 : 0) + 26, g: async y => {
+    if (t.selesai) { kotak(X0, y, 40, 40, 12, HEX.sage); try { x.drawImage(await gbr(svg('centang')), X0 + 8, y + 8, 24, 24); } catch {} } else kotak(X0, y, 40, 40, 12, '#EADBCB');
+    tulis(l, X0 + 60, y + 30, F(28, 800), t.selesai ? '#9A8476' : '#4A3428', 38);
+    if (t.selesai) l.forEach((s, n) => { x.fillRect(X0 + 60, y + 20 + n * 38, x.measureText(s).width, 3); });
+    if (k) tulis([k], X0 + 60, y + 30 + l.length * 38, F(24, 700), '#7A6152', 0);
+  } }; }));
+  if (h.tanya.length) seksi('Perlu ditanya', svg('tanya', '#fff', HEX.lilac), 'lilac', h.tanya.map(s => { const l = bungkus('• ' + s, iw - 20, F(28, 800)); return { h: l.length * 38 + 14, g: async y => tulis(l, X0, y + 30, F(28, 800), TEKS.lilac, 38) }; }), PASTEL.lilac);
+  if (h.kutipan.length) seksi('Kalimat penting', svg('kutip'), 'sage', h.kutipan.map(q => { const a = bungkus(`"${q.asli}"`, iw, F(30, 900)), b = bungkus(q.arti + (q.siapa ? ' — ' + q.siapa : ''), iw, F(26, 700)); return { h: a.length * 40 + b.length * 34 + 24, g: async y => { tulis(a, X0, y + 30, F(30, 900), '#2F4A3E', 40); tulis(b, X0, y + 30 + a.length * 40, F(26, 700), TEKS.sage, 34); } }; }), PASTEL.sage);
   const pH = Math.round(iw * 300 / 340);
-  seksi('Peta alur', svg('star'), 'coral', pH, async y => { try { x.drawImage(await gbr(petaSvg(h).replace('<svg ', `<svg width="${iw}" height="${pH}" `)), X0, y, iw, pH); } catch {} });
-  // gambar semua
-  const H = pad + blok.reduce((a, b) => a + b.h + gap, 0) + 70;
-  cv.width = W; cv.height = H; x.fillStyle = '#F5EADF'; x.fillRect(0, 0, W, H);
-  let y = pad; for (const b of blok) { await b.g(y); y += b.h + gap; }
-  x.textAlign = 'center'; tulis([`Jejak · ${tglPanjang(m.tanggal)}`], W / 2, H - 40, F(24, 800), '#7A6152', 0);
+  seksi('Peta alur', svg('star'), 'coral', [{ h: pH, g: async y => { try { x.drawImage(await gbr(petaSvg(h).replace('<svg ', `<svg width="${iw}" height="${pH}" `)), X0, y, iw, pH); } catch {} } }]);
+  // susun jadi beberapa kolom berdampingan dalam SATU gambar (tidak memanjang ke bawah)
+  const tinggiSeksi = b => 154 + b.items.reduce((s, it) => s + it.h, 0);
+  const T = blok.reduce((s, b) => s + (b.items ? tinggiSeksi(b) : b.h) + gap, 0);
+  const n = Math.min(4, Math.max(1, Math.round(Math.sqrt(T / (W * 1.25))))); // jumlah kolom supaya bentuknya mendekati 4:5
+  const pack = batas => { // isi kolom satu per satu sampai batas tinggi
+    const kolom = []; let isi, sisa;
+    const kolBaru = () => { isi = []; kolom.push(isi); sisa = batas; };
+    kolBaru();
+    for (const b of blok) {
+      if (!b.items) { if (b.h > sisa && isi.length) kolBaru(); isi.push(b); sisa -= b.h + gap; continue; }
+      let i = 0, lanjut = false;
+      while (i < b.items.length) {
+        if (124 + b.items[i].h + 30 > sisa && isi.length) kolBaru();
+        let tot = 154, z = i; while (z < b.items.length && tot + b.items[z].h <= sisa) tot += b.items[z++].h;
+        if (z === i) tot += b.items[z++].h;
+        const potong = b.items.slice(i, z), jd = b.judul + (lanjut ? ' (lanjutan)' : ''), hh = tot;
+        isi.push({ h: hh, g: async y => {
+          kotak(pad, y, W - pad * 2, hh, 44, b.latar); kotak(pad + 36, y + 36, 64, 64, 20, HEX[b.c]); kotak(pad + 44, y + 40, 48, 20, 10, 'rgba(255,255,255,.35)');
+          try { x.drawImage(await gbr(b.ikon), pad + 50, y + 50, 36, 36); } catch {}
+          tulis([jd], pad + 120, y + 80, F(34, 900), '#4A3428', 0);
+          let yy = y + 124; for (const it of potong) { await it.g(yy); yy += it.h; }
+        } });
+        sisa -= hh + gap; i = z; lanjut = true;
+      }
+    }
+    return kolom;
+  };
+  // cari tinggi kolom terkecil yang masih muat dalam n kolom, supaya kolom-kolomnya seimbang
+  let batas = Math.max(Math.ceil(T / n), ...blok.map(b => b.items ? 154 + Math.max(...b.items.map(i => i.h)) : b.h)), kolom = pack(batas);
+  while (kolom.length > n) { batas += 30; kolom = pack(batas); }
+  const tinggiKol = kolom.map(k => k.reduce((s, b) => s + b.h + gap, 0) - gap);
+  const cv = document.createElement('canvas'); cv.width = W * kolom.length - pad * (kolom.length - 1); cv.height = pad + Math.max(...tinggiKol) + 90; x = cv.getContext('2d');
+  x.fillStyle = '#F5EADF'; x.fillRect(0, 0, cv.width, cv.height);
+  for (let c = 0; c < kolom.length; c++) { // tiap kolom digambar bergeser ke kanan
+    x.save(); x.translate(c * (W - pad), 0);
+    let y = pad; for (const b of kolom[c]) { await b.g(y); y += b.h + gap; }
+    x.restore();
+  }
+  x.textAlign = 'center'; tulis([`Jejak · ${tglPanjang(m.tanggal)}`], cv.width / 2, cv.height - 36, F(24, 800), '#9A8476', 0);
   const blob = await new Promise(ok => cv.toBlob(ok, 'image/png'));
-  const nm = `ringkasan-${o.nama.replace(/[^\w-]+/g, '-').toLowerCase()}-${new Date(m.tanggal).toISOString().slice(0, 10)}.png`;
-  return new File([blob], nm, { type: 'image/png' });
+  return [new File([blob], `ringkasan-${o.nama.replace(/[^\w-]+/g, '-').toLowerCase()}-${new Date(m.tanggal).toISOString().slice(0, 10)}.png`, { type: 'image/png' })];
 }
 
 /* ---- Atur ---- */
