@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.0.0',
+  VERSI: '1.0.2',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-2.5-flash',          // model utama (bisa diganti di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-latest', // dipakai kalau model utama tidak tersedia
@@ -254,7 +254,7 @@ R.beranda = () => {
   const orang = [...S0.orang].sort((a, b) => (terakhir[b.id] || b.dibuat) - (terakhir[a.id] || a.dibuat)).slice(0, 5);
   $('#app').innerHTML = `
   <div class="top"><h1>Jejak</h1><a href="#/tugas" class="btn-ikon clay" aria-label="Tugas terbuka: ${nTugas}">${svg('bell', '#E0A532')}${nTugas ? `<i class="badge">${nTugas}</i>` : ''}</a></div>
-  <section class="hero clay"><img src="./img/ippo.webp" alt=""><div class="isi">
+  <section class="hero clay"><img src="./ippo.webp" alt=""><div class="isi">
     ${S0.kunci ? `<h2>Halo!</h2><p>${nTugas ? `Ada ${nTugas} tugas yang belum selesai.` : 'Semua tugas sudah beres.'}</p><button class="btn utama i3 c-coral" data-baru style="height:40px;font-size:13px;align-self:flex-start;margin-top:4px">Meeting baru</button>`
       : `<h2>Selamat datang!</h2><p>Pasang kunci API Gemini dulu supaya bisa merangkum.</p><a href="#/atur" class="btn utama i3 c-coral" style="height:40px;font-size:13px;align-self:flex-start;margin-top:4px;text-decoration:none">Buka Atur</a>`}
   </div></section>
@@ -497,7 +497,7 @@ R.hasil = id => {
   $('#app').innerHTML = `
   <div class="top"><button class="btn-ikon clay" data-back aria-label="Kembali">${svg('back', '#4A3428')}</button><span class="pill clay" style="background:var(--card);color:var(--ink);font-weight:800">${esc(o.nama)} · ${esc(tglPendek(m.tanggal))}${m.durasi ? ' · ' + esc(durasiTeks(m.durasi)) : ''}</span></div>
   <section class="poster clay">
-    <div class="kepala"><img src="./img/ippo.webp" alt=""><div class="isi"><small class="k">RINGKASAN MEETING</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
+    <div class="kepala"><img src="./ippo.webp" alt=""><div class="isi"><small class="k">RINGKASAN MEETING</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
     ${h.bagian.length > 1 ? `<div class="filter" role="group" aria-label="Saring per bagian"><button class="chip on i3 c-sage" data-f="-1"><span>Semua</span></button>${h.bagian.map((b, i) => `<button class="chip clay" data-f="${i}">${i + 1} · ${esc(b)}</button>`).join('')}</div>` : ''}
     <div class="kartu">${h.poin.map(kartu).join('') || '<p class="kosong">Tidak ada poin penting.</p>'}</div>
     ${h.penutup ? `<div class="pita clay">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
@@ -576,7 +576,7 @@ async function gambarPoster(m, o) {
   const kotak = (X, Y, w, hh, r, c) => { x.fillStyle = c; x.beginPath(); x.roundRect(X, Y, w, hh, r); x.fill(); };
   x.fillStyle = '#F5EADF'; x.fillRect(0, 0, W, H);
   kotak(pad, pad, W - pad * 2, tinggiKepala, 56, '#F6CDB8');
-  try { const im = await muatGambar('./img/ippo.webp'); const s = 470; x.drawImage(im, W - pad - s + 20, pad + tinggiKepala - s * im.height / im.width - 10, s, s * im.height / im.width); } catch {}
+  try { const im = await muatGambar('./ippo.webp'); const s = 470; x.drawImage(im, W - pad - s + 20, pad + tinggiKepala - s * im.height / im.width - 10, s, s * im.height / im.width); } catch {}
   let y = pad + 80; x.fillStyle = '#8A3E22'; x.font = F(26, 900); x.fillText('RINGKASAN MEETING · ' + o.nama.toUpperCase(), pad + 44, y);
   y += 30; x.fillStyle = '#4A2A1C'; x.font = F(64, 900); jdl.forEach(l => { y += 70; x.fillText(l, pad + 44, y); });
   y += 16; x.fillStyle = '#6E4A38'; x.font = F(30, 700); inti.forEach(l => { y += 40; x.fillText(l, pad + 44, y); });
