@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.1.2',
+  VERSI: '1.2.0',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -266,10 +266,18 @@ const maju = (lo, hi, label = '') => (n, blok) => { // bar kemajuan mengikuti ja
   if (!n) return blok === 'mikir' && setTahap(label + 'Mencari poin penting…', lo + (hi - lo) * 0.3);
   setTahap(label + 'Menulis kartu…', Math.min(hi, lo + (hi - lo) * (0.4 + 0.6 * Math.min(1, n / 5000))), 'Jawaban sedang diterima. Jangan tutup aplikasi.');
 };
+const promptFoto = (j, n) => buatPrompt({ ...j, potongan: null }).replace(/^[^\n]*\n[^\n]*\n/, `Kamu pencatat meeting yang teliti. Berikut ${n} foto dari sebuah meeting (misalnya slide presentasi, papan tulis, catatan, atau dokumen). Baca semua tulisan, angka, dan gambar penting di foto.\nTulis semua jawaban dalam bahasa Indonesia sehari-hari yang sederhana.\n`) + '\n- Untuk foto: di "alur" isi waktu dengan nomor foto, misalnya "Foto 1-3".';
+const rangkumFoto = (data, j, mj) => mintaJSON([...data.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })), { text: promptFoto(j, data.length) }], mj);
+const kecilkanFoto = f => new Promise((ok, no) => { // foto dikecilkan di HP (sisi terpanjang 1600 px) supaya cepat & hemat kuota
+  const u = URL.createObjectURL(f), im = new Image();
+  im.onload = () => { const s = Math.min(1, 1600 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => b ? ok(b) : no(), 'image/jpeg', 0.82); };
+  im.onerror = () => { URL.revokeObjectURL(u); no(new Error('foto rusak')); }; im.src = u;
+});
+const keBase64 = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(b); });
 const rangkum = (file, j, mj) => mintaJSON([{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt(j) }], mj);
 function gabungkan(list, j, mj) { // satukan ringkasan beberapa bagian jadi satu kesimpulan menyeluruh
   const data = list.map((h, i) => ({ bagian_rekaman: i + 1, ...h, tugas: h.tugas.map(({ apa, siapa, kapan, selesai }) => ({ apa, siapa, kapan, selesai })) }));
-  return mintaJSON([{ text: `Kamu pencatat meeting yang teliti. Di bawah ini ada ringkasan dari ${list.length} bagian rekaman yang berurutan dari SATU meeting dengan "${j.nama}"${j.topik ? ` (topik: ${j.topik})` : ''}.
+  return mintaJSON([{ text: `Kamu pencatat meeting yang teliti. Di bawah ini ada ringkasan dari ${list.length} bagian (potongan rekaman dan/atau kumpulan foto) dari SATU meeting dengan "${j.nama}"${j.topik ? ` (topik: ${j.topik})` : ''}.
 Satukan semuanya menjadi SATU kesimpulan menyeluruh, seolah-olah merangkum seluruh meeting sekaligus. Tulis dalam bahasa Indonesia sehari-hari yang sederhana.
 
 Aturan:
@@ -544,6 +552,10 @@ R.baru = q => {
     </section>`
     : `<input type="file" id="fileIn" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.flac,.webm" multiple hidden>
     <button type="button" class="file clay" id="pilihFile"><span class="i3 ic c-sage" style="width:52px;height:52px;border-radius:17px">${svg('unggah')}</span><span class="tx"><b id="fNama">Pilih file rekaman</b><small id="fInfo">Bisa pilih beberapa file sekaligus. Rekaman panjang dipotong otomatis.</small></span></button>`}
+  <section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('unggah')}</span><h3 style="flex:1">Foto (boleh kosong)</h3><button type="button" class="chip clay" id="tambahFoto">+ Tambah foto</button></div>
+    <input type="file" id="fotoIn" accept="image/*" multiple hidden>
+    <div id="daftarFoto" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"></div>
+    <p class="hint" id="infoFoto">Slide, papan tulis, atau catatan. Dari galeri atau kamera, bisa banyak.</p></section>
   <div class="err" id="errFile" hidden></div>
   <button type="button" class="btn utama i3 c-coral" id="btnRangkum" style="width:100%"><span>Rangkum sekarang</span></button>
   <p class="hint" style="text-align:center">Pakai WiFi supaya cepat. Rekaman dikirim ke Google Gemini untuk dirangkum, lalu dihapus dari sana.</p>`;
@@ -574,12 +586,23 @@ R.baru = q => {
   if (!rekam) { $('#pilihFile').onclick = () => $('#fileIn').click(); $('#fileIn').onchange = e => { if (e.target.files.length) pasangBanyak(e.target.files); }; }
   else pasangPerekam(pasang);
   if (!rekam && q.get('dibagikan')) ambilKiriman(pasang);
+  let fotos = []; const daftar = $('#daftarFoto');
+  const gambarFoto = () => { daftar.innerHTML = fotos.map((f, i) => `<div style="position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--well)">${f.url ? `<img src="${f.url}" alt="Foto ${i + 1}" style="width:100%;height:100%;object-fit:cover">` : ''}<button type="button" data-hapusfoto="${i}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:999px;border:0;background:rgba(74,52,40,.75);color:#fff;font-weight:900">×</button></div>`).join(''); $('#infoFoto').textContent = fotos.length ? `${fotos.length} foto dipilih.` : 'Slide, papan tulis, atau catatan. Dari galeri atau kamera, bisa banyak.'; };
+  $('#tambahFoto').onclick = () => $('#fotoIn').click();
+  $('#fotoIn').onchange = async e => {
+    const fs = [...e.target.files].filter(f => f.type.startsWith('image/')); e.target.value = ''; if (!fs.length) return;
+    const btn = $('#tambahFoto'); await tombolProses(btn, 'Menyiapkan foto…', async () => {
+      for (const f of fs) { try { const b = await kecilkanFoto(f); fotos.push({ blob: b, url: URL.createObjectURL(b) }); } catch { toast('Ada foto yang tidak bisa dibaca, dilewati.'); } gambarFoto(); }
+    });
+  };
+  daftar.onclick = e => { const b = e.target.closest('[data-hapusfoto]'); if (!b) return; const [f] = fotos.splice(+b.dataset.hapusfoto, 1); URL.revokeObjectURL(f.url); gambarFoto(); };
   $('#btnRangkum').onclick = () => {
     const n = nama.value.trim().replace(/\s+/g, ' ');
     if (!n) { errN.textContent = 'Tulis dulu nama orangnya.'; errN.hidden = false; nama.focus(); return; }
     if (rekam && REC.aktif) { errF.textContent = 'Hentikan rekaman dulu.'; errF.hidden = false; return; }
-    if (!berkas.length) { errF.textContent = rekam ? 'Rekam dulu obrolannya.' : 'Pilih dulu file rekamannya.'; errF.hidden = false; return; }
-    JOB = { nama: n, topik: $('#topik').value.trim().slice(0, 60), sumber: berkas, durasi: berkas.reduce((a, b) => a + (b.durasi || 0), 0), bagian: null };
+    if (!berkas.length && !fotos.length) { errF.textContent = rekam ? 'Rekam dulu obrolannya atau tambahkan foto.' : 'Pilih rekaman atau tambahkan foto dulu.'; errF.hidden = false; return; }
+    if (fotos.some(f => !f.blob)) { errF.textContent = 'Foto masih disiapkan, tunggu sebentar.'; errF.hidden = false; return; }
+    JOB = { foto: fotos.map(f => f.blob), nama: n, topik: $('#topik').value.trim().slice(0, 60), sumber: berkas, durasi: berkas.reduce((a, b) => a + (b.durasi || 0), 0), bagian: null };
     buka('#/proses');
   };
 };
@@ -654,12 +677,14 @@ async function prosesJalan() {
       setTahap('Menyiapkan rekaman…', 2, j.durasi > POTONG_DETIK + 180 ? 'Rekaman panjang sedang dipotong per 30 menit.' : '');
       const bag = []; let mulai = 0;
       for (const s of j.sumber) for (const p of await potongRekaman(s)) { bag.push({ ...p, mulai, file: null, hasil: null }); mulai += p.durasi || 0; }
+      for (let i = 0; i < (j.foto || []).length; i += 20) bag.push({ foto: j.foto.slice(i, i + 20), hasil: null }); // foto dikirim per 20
       j.bagian = bag;
     }
     const N = j.bagian.length, lebar = (N > 1 ? 82 : 92) / N;
     for (let k = 0; k < N; k++) {
       const p = j.bagian[k], lo = 3 + k * lebar, label = N > 1 ? `Bagian ${k + 1} dari ${N}: ` : '';
       if (p.hasil) continue; // sudah selesai sebelumnya (saat Coba lagi)
+      if (p.foto) { setTahap(label + `Membaca ${p.foto.length} foto…`, lo + lebar * 0.2); p.hasil = await rangkumFoto(await Promise.all(p.foto.map(keBase64)), j, maju(lo + lebar * 0.3, lo + lebar, label)); p.foto = null; continue; }
       if (!p.file) { setTahap(label + 'Mengirim rekaman…', lo); p.file = await unggahKeGemini(p.blob, p.mime, f => setTahap(`${label}Mengirim rekaman… ${Math.round(f * 100)}%`, lo + f * lebar * 0.4)); }
       setTahap(label + 'Mendengarkan obrolan…', lo + lebar * 0.45, (p.durasi || 0) > 15 * 60 ? 'Google perlu beberapa menit untuk mendengarkan. Jangan tutup aplikasi.' : '');
       p.hasil = await rangkum(p.file, { ...j, durasi: p.durasi, potongan: N > 1 ? { k: k + 1, N, mulai: Math.round(p.mulai / 60) } : null }, maju(lo + lebar * 0.5, lo + lebar, label));
