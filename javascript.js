@@ -1,10 +1,10 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.0.6',
+  VERSI: '1.0.7',
   API: 'https://generativelanguage.googleapis.com',
-  MODEL: 'gemini-2.5-flash',          // model utama (bisa diganti di menu Atur)
-  MODEL_CADANGAN: 'gemini-flash-latest', // dipakai kalau model utama tidak tersedia
+  MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
+  MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
   MAKS_MB: 1900                       // batas ukuran rekaman (batas Gemini 2 GB)
 };
 const WARNA = ['coral', 'butter', 'sage', 'blue', 'lilac'];
@@ -115,13 +115,14 @@ function perbaruiLencana() { const n = tugasTerbuka(S0.meeting), b = $('#badgeTu
 
 /* ========== GEMINI ========== */
 class GagalAI extends Error { constructor(pesan, tahap) { super(pesan); this.tahap = tahap; } }
-function pesanError(status, teks = '') {
+function pesanError(status, teks = '') { const k = status ? ` (kode ${status})` : ''; return pesanDasar(status, teks) + k; }
+function pesanDasar(status, teks) {
   if (status === 0) return 'Internet terputus. Cek sinyal lalu tekan Coba lagi.';
   if (status === 400 && /API key|API_KEY/i.test(teks)) return 'Kunci API salah. Cek lagi di menu Atur.';
   if (status === 401 || status === 403) return 'Kunci API tidak bisa dipakai. Cek lagi di menu Atur.';
-  if (status === 404) return 'Model AI tidak tersedia. Coba ganti model di menu Atur.';
+  if (status === 404) return 'Model AI tidak tersedia. Pilih model lain lewat Atur, Cek model.';
   if (status === 413) return 'Rekaman terlalu besar.';
-  if (status === 429) return 'Kuota gratis sedang penuh. Tunggu beberapa menit lalu coba lagi.';
+  if (status === 429) return 'Kuota model ini sedang penuh. Tunggu beberapa menit, atau pilih model lain lewat Atur, Cek model.';
   if (status >= 500) return 'Server Google sedang sibuk. Rekamanmu sudah terkirim, jadi tekan Coba lagi beberapa menit lagi (tidak perlu unggah ulang).';
   return 'Gagal memproses rekaman. Coba lagi.';
 }
@@ -129,7 +130,7 @@ async function panggil(url, opt = {}) {
   let r;
   try { r = await fetch(CONFIG.API + url, { ...opt, headers: { 'x-goog-api-key': S0.kunci, ...(opt.headers || {}) } }); }
   catch (e) { throw new GagalAI(pesanError(0)); }
-  if (!r.ok) { const t = await r.text().catch(() => ''); console.warn('Gemini', r.status, t); const e = new GagalAI(pesanError(r.status, t)); e.status = r.status; throw e; }
+  if (!r.ok) { const t = await r.text().catch(() => ''); console.warn('Gemini', r.status, t); const e = new GagalAI(pesanError(r.status, t)); e.status = r.status; e.detail = t; throw e; }
   return r;
 }
 async function unggahKeGemini(blob, mime, onProg) {
@@ -200,7 +201,7 @@ async function mintaRingkasan(m, body, onTeks) {
   let r;
   try { r = await fetch(`${CONFIG.API}/v1beta/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, { method: 'POST', signal: ac.signal, headers: { 'x-goog-api-key': S0.kunci, 'Content-Type': 'application/json' }, body }); }
   catch { clearTimeout(jam); const e = new GagalAI(alasan ? 'Google terlalu lama menjawab. Tekan Coba lagi (tidak perlu unggah ulang).' : pesanError(0)); e.status = alasan ? 'waktu' : 0; throw e; }
-  if (!r.ok) { clearTimeout(jam); const t = await r.text().catch(() => ''); console.warn('Gemini', r.status, t); const e = new GagalAI(pesanError(r.status, t)); e.status = r.status; throw e; }
+  if (!r.ok) { clearTimeout(jam); const t = await r.text().catch(() => ''); console.warn('Gemini', r.status, t); const e = new GagalAI(pesanError(r.status, t)); e.status = r.status; e.detail = t; throw e; }
   const baca = r.body.getReader(), dek = new TextDecoder(); let sisa = '', teks = '', blok = '';
   try {
     for (;;) {
@@ -211,7 +212,7 @@ async function mintaRingkasan(m, body, onTeks) {
       for (const b of baris) {
         if (!b.startsWith('data:')) continue;
         let d; try { d = JSON.parse(b.slice(5)); } catch { continue; }
-        if (d.error) { const e = new GagalAI(pesanError(d.error.code || 500, d.error.message)); e.status = d.error.code || 500; throw e; }
+        if (d.error) { const e = new GagalAI(pesanError(d.error.code || 500, d.error.message)); e.status = d.error.code || 500; e.detail = d.error.message || ''; throw e; }
         if (d.promptFeedback?.blockReason) throw new GagalAI('Rekaman ditolak oleh AI. Coba rekaman lain.');
         for (const p of d.candidates?.[0]?.content?.parts || []) { if (p.thought) blok = 'mikir'; else if (p.text) { teks += p.text; blok = 'tulis'; } }
         onTeks(teks.length, blok);
@@ -224,9 +225,10 @@ async function mintaRingkasan(m, body, onTeks) {
   return teks;
 }
 async function rangkum(file, j, tanpaTranskrip = j.durasi > 45 * 60) { // rekaman > 45 menit: tanpa transkrip supaya tidak kepanjangan
+  let pikir = { thinkingBudget: 512, includeThoughts: true };
   const body = t => JSON.stringify({
     contents: [{ role: 'user', parts: [{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt({ ...j, tanpaTranskrip: t }) }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 65536, temperature: 0.3, thinkingConfig: { thinkingBudget: 512, includeThoughts: true } }
+    generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 65536, temperature: 0.3, ...(pikir ? { thinkingConfig: pikir } : {}) }
   });
   const tunggu = d => new Promise(s => setTimeout(s, d));
   const target = t => t ? 5000 : 5000 + (j.durasi || 600) * 12; // perkiraan panjang jawaban, hanya untuk bar
@@ -242,8 +244,9 @@ async function rangkum(file, j, tanpaTranskrip = j.durasi > 45 * 60) { // rekama
     try { teks = await mintaRingkasan(m, body(t), kemajuan(t)); pakaiTanpa = t; break; }
     catch (e) {
       galat = e;
+      if (e.status === 400 && pikir && /think/i.test(e.detail || '')) { pikir = null; try { teks = await mintaRingkasan(m, body(t), kemajuan(t)); pakaiTanpa = t; break; } catch (e3) { galat = e3; } } // model tidak mendukung pengaturan berpikir
       if (e.status === 404 && m !== CONFIG.MODEL_CADANGAN) { try { teks = await mintaRingkasan(CONFIG.MODEL_CADANGAN, body(t), kemajuan(t)); pakaiTanpa = t; break; } catch (e2) { galat = e2; } }
-      if (!(galat.status >= 500 || galat.status === 429)) throw galat; // putus/terlalu lama/salah kunci: langsung tampilkan tombol Coba lagi
+      if (!(galat.status >= 500)) throw galat; // kuota penuh/putus/salah kunci: jangan diulang otomatis (supaya kuota tidak terbuang)
     }
   }
   if (teks === undefined) throw galat;
@@ -668,6 +671,8 @@ R.atur = () => {
     <input class="in" id="model" autocomplete="off" spellcheck="false" value="${esc(S0.model)}">
     <div class="err" id="errKunci" hidden></div>
     <button class="btn utama i3 c-coral" id="bKunci" style="width:100%"><span>Simpan</span></button>
+    <button class="btn clay" id="bCekModel" style="width:100%;margin-top:10px"><span>Cek model</span></button>
+    <div id="hasilCek"></div>
     <div class="panduan" style="margin-top:12px">Cara ambil kunci (gratis):<ol><li>Buka aistudio.google.com di browser.</li><li>Masuk dengan akun Google.</li><li>Tekan <b>Get API key</b>, lalu <b>Create API key</b>.</li><li>Salin kuncinya, tempel di kolom di atas, lalu Simpan.</li></ol>Kunci hanya tersimpan di HP ini. Jangan bagikan kunci ke orang lain.</div>
   </section>
   <section class="kotak clay">
@@ -687,6 +692,7 @@ R.atur = () => {
   </section>
   <p class="hint" style="text-align:center">Jejak versi ${CONFIG.VERSI}</p>`;
   $('#lihatKunci').onchange = e => $('#kunci').type = e.target.checked ? 'text' : 'password';
+  $('#bCekModel').onclick = e => tombolProses(e.currentTarget, 'Sedang mengecek…', cekModel);
   $('#bKunci').onclick = e => tombolProses(e.currentTarget, 'Sedang mengecek kunci…', async () => {
     const k = $('#kunci').value.replace(/^[\s"']+|[\s"']+$/g, ''), md = $('#model').value.trim() || CONFIG.MODEL, err = $('#errKunci'); err.hidden = true;
     if (!/^[A-Za-z0-9._~+\/=-]{20,200}$/.test(k)) { err.textContent = /\s/.test(k) ? 'Kunci ada spasi atau baris baru di tengahnya. Salin ulang dari AI Studio.' : 'Kunci terlalu pendek atau ada huruf aneh. Salin ulang dari AI Studio.'; err.hidden = false; return; }
@@ -728,6 +734,32 @@ R.atur = () => {
     S0.orang = []; S0.meeting = []; perbaruiLencana(); toast('Semua data dihapus');
   });
 };
+/* Cek model: daftar model yang bisa dipakai kunci ini, dicoba dengan pesan super pendek */
+async function cekModel() {
+  const box = $('#hasilCek'), lbl = t => box.innerHTML = `<p class="hint">${esc(t)}</p>`;
+  if (!S0.kunci) return lbl('Simpan kunci API dulu.');
+  let list;
+  try { list = (await (await panggil('/v1beta/models?pageSize=200')).json()).models || []; } catch (x) { return lbl(x.message); }
+  const versi = n => parseFloat((n.match(/(\d+(\.\d+)?)/) || [0, 0])[1]);
+  const cocok = list.map(m => m.name.replace('models/', '')).filter(n => /^gemini/.test(n) && !/tts|image|embed|live|audio|thinking|computer|robotics|exp/.test(n))
+    .sort((a, b) => versi(b) - versi(a) || (/lite/.test(b) - /lite/.test(a)) || a.length - b.length).slice(0, 8);
+  if (!cocok.length) return lbl('Tidak ada model yang cocok untuk kunci ini.');
+  const hasil = [];
+  for (let i = 0; i < cocok.length; i++) {
+    lbl(`Mengecek ${i + 1} dari ${cocok.length}: ${cocok[i]}…`);
+    let st = 'ok';
+    try { await panggil(`/v1beta/models/${encodeURIComponent(cocok[i])}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Balas satu kata: OK' }] }], generationConfig: { maxOutputTokens: 8 } }) }); }
+    catch (x) { st = x.status === 429 ? 'kuota' : 'tidak'; }
+    hasil.push([cocok[i], st]);
+  }
+  const lb = { ok: ['ijo', 'Bisa dipakai'], kuota: ['oren', 'Kuota penuh'], tidak: ['abu', 'Tidak bisa'] };
+  box.innerHTML = `<div style="margin-top:12px">${hasil.map(([n, s]) => `<div class="tg"><span class="tx">${esc(n)}${n === S0.model ? '<small>Sedang dipakai</small>' : ''}</span><span class="pill ${lb[s][0]}">${lb[s][1]}</span>${s === 'ok' && n !== S0.model ? `<button class="chip clay" data-pakai="${esc(n)}">Pakai</button>` : ''}</div>`).join('')}</div><p class="hint">Saran: untuk rekaman panjang pilih model "flash-lite" yang bisa dipakai, jatah gratisnya paling besar. Tes ini hampir tidak memakai kuota.</p>`;
+  box.querySelectorAll('[data-pakai]').forEach(b => b.onclick = () => tombolProses(b, 'Menyimpan…', async () => {
+    try { await DB.put('setelan', { k: 'model', v: b.dataset.pakai }); } catch { return toast('Gagal menyimpan. Coba lagi.'); }
+    S0.model = b.dataset.pakai; $('#model').value = S0.model; toast('Model diganti ke ' + S0.model); cekTampil();
+  }));
+  const cekTampil = () => box.querySelectorAll('.tg').forEach(r => { const n = r.querySelector('.tx').firstChild.textContent; r.querySelector('small')?.remove(); if (n === S0.model) r.querySelector('.tx').insertAdjacentHTML('beforeend', '<small>Sedang dipakai</small>'); });
+}
 function rapikanLama(h) { const r = rapikan(h || {}); r.tugas = r.tugas.map((t, i) => ({ ...t, id: typeof h?.tugas?.[i]?.id === 'string' ? h.tugas[i].id : t.id, selesai: !!h?.tugas?.[i]?.selesai })); return r; }
 
 /* ========== MULAI ========== */
