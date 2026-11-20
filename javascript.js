@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.0.4',
+  VERSI: '1.0.5',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-2.5-flash',          // model utama (bisa diganti di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-latest', // dipakai kalau model utama tidak tersedia
@@ -122,7 +122,7 @@ function pesanError(status, teks = '') {
   if (status === 404) return 'Model AI tidak tersedia. Coba ganti model di menu Atur.';
   if (status === 413) return 'Rekaman terlalu besar.';
   if (status === 429) return 'Kuota gratis sedang penuh. Tunggu beberapa menit lalu coba lagi.';
-  if (status >= 500) return 'Server Google sedang sibuk. Coba lagi sebentar lagi.';
+  if (status >= 500) return 'Server Google sedang sibuk. Rekamanmu sudah terkirim, jadi tekan Coba lagi beberapa menit lagi (tidak perlu unggah ulang).';
   return 'Gagal memproses rekaman. Coba lagi.';
 }
 async function panggil(url, opt = {}) {
@@ -192,21 +192,32 @@ Aturan:
 - transkrip: tulis lengkap per giliran bicara, dengan waktu dan nama pembicara (pakai nama kalau disebut, kalau tidak "Pembicara 1", "Pembicara 2"). Untuk kalimat bahasa Jawa, tulis aslinya lalu artinya dalam kurung.
 - Kalau tidak ada isinya, kirim daftar kosong.${j.tanpaTranskrip ? '\n- PENTING: transkrip kirim sebagai daftar kosong [] supaya jawaban tidak terlalu panjang.' : ''}`;
 }
-async function rangkum(file, j, tanpaTranskrip = false) {
-  const body = JSON.stringify({
-    contents: [{ role: 'user', parts: [{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt({ ...j, tanpaTranskrip }) }] }],
+async function rangkum(file, j, tanpaTranskrip = j.durasi > 45 * 60) { // rekaman > 45 menit: tanpa transkrip supaya tidak kepanjangan
+  const body = t => JSON.stringify({
+    contents: [{ role: 'user', parts: [{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt({ ...j, tanpaTranskrip: t }) }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 65536, temperature: 0.3, thinkingConfig: { thinkingBudget: 1024 } }
   });
-  const kirim = m => panggil(`/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-  let r;
-  try { r = await kirim(S0.model); }
-  catch (e) { if (e.status === 404 && S0.model !== CONFIG.MODEL_CADANGAN) r = await kirim(CONFIG.MODEL_CADANGAN); else throw e; }
+  const kirim = (m, t) => panggil(`/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(t) });
+  const tunggu = d => new Promise(s => setTimeout(s, d));
+  // coba otomatis sampai 4 kali kalau server Google sibuk: jeda bertambah, lalu tanpa transkrip, lalu model cadangan
+  const rencana = [[S0.model, tanpaTranskrip, 0], [S0.model, true, 8000], [S0.model, true, 20000], [CONFIG.MODEL_CADANGAN, true, 5000]];
+  let r, galat, pakaiTanpa = tanpaTranskrip;
+  for (const [m, t, jeda] of rencana) {
+    if (jeda) { setTahap('Server sibuk, mencoba lagi otomatis…', 85, 'Tidak perlu menekan apa-apa, tunggu sebentar.'); await tunggu(jeda); }
+    try { r = await kirim(m, t); pakaiTanpa = t; break; }
+    catch (e) {
+      galat = e;
+      if (e.status === 404 && m !== CONFIG.MODEL_CADANGAN) { try { r = await kirim(CONFIG.MODEL_CADANGAN, t); pakaiTanpa = t; break; } catch (e2) { galat = e2; } }
+      if (!(e.status >= 500 || e.status === 429 || e.status === undefined)) throw e; // salah kunci dll: jangan diulang
+    }
+  }
+  if (!r) throw galat;
   const d = await r.json(), c = d.candidates?.[0];
   const teks = (c?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
   if (!teks) throw new GagalAI(d.promptFeedback?.blockReason ? 'Rekaman ditolak oleh AI. Coba rekaman lain.' : 'AI tidak memberi jawaban. Coba lagi.');
   let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
   if (!o) { // jawaban terlalu panjang (biasanya karena transkrip): ulangi sekali tanpa transkrip
-    if (!tanpaTranskrip) return rangkum(file, j, true);
+    if (!pakaiTanpa) return rangkum(file, j, true);
     throw new GagalAI('Jawaban AI terpotong. Coba lagi.');
   }
   return rapikan(o);
@@ -534,7 +545,7 @@ R.hasil = id => {
   $('#bTrans').onclick = e => tombolProses(e.currentTarget, 'Sedang membuka…', async () => {
     const box = $('#trans'); if (box.innerHTML) { box.innerHTML = ''; return; }
     const t = await DB.get('transkrip', m.id).catch(() => null);
-    box.innerHTML = `<section class="kotak clay trans">${(t?.isi || []).map(x => `<p><b>${esc(x.waktu)} ${esc(x.siapa)}:</b> ${esc(x.teks)}</p>`).join('') || '<p>Transkrip tidak ada.</p>'}</section>`;
+    box.innerHTML = `<section class="kotak clay trans">${(t?.isi || []).map(x => `<p><b>${esc(x.waktu)} ${esc(x.siapa)}:</b> ${esc(x.teks)}</p>`).join('') || '<p>Transkrip tidak dibuat. Untuk rekaman lebih dari 45 menit, Jejak hanya membuat ringkasan supaya tidak gagal. Rekaman aslinya tetap ada di HP-mu.</p>'}</section>`;
   });
   $('#bSimpan').onclick = e => tombolProses(e.currentTarget, 'Sedang membuat gambar…', async () => {
     const f = await gambarPoster(m, o).catch(() => null); if (!f) return toast('Gagal membuat gambar. Coba lagi.');
