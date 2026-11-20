@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://generativelanguage.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Jejak</title>
+<meta name="theme-color" content="#F5EADF">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Jejak">
+<meta name="application-name" content="Jejak">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./img/icon-180.png">
+<link rel="icon" type="image/png" href="./img/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+<link rel="stylesheet" href="./stylesheet.css">
+</head>
+<body>
+<main id="app" aria-live="polite"></main>
+
+<nav id="nav" class="clay" aria-label="Menu utama">
+  <a href="#/" data-tab="beranda"><span class="ni" data-ic="home"></span><b>Beranda</b></a>
+  <a href="#/orang" data-tab="orang"><span class="ni" data-ic="orang"></span><b>Orang</b></a>
+  <button type="button" id="btnBaru" class="i3 fab c-coral" aria-label="Meeting baru"><span data-ic="plus"></span></button>
+  <a href="#/tugas" data-tab="tugas"><span class="ni" data-ic="tugas"></span><b>Tugas</b><i id="badgeTugas" class="badge" hidden></i></a>
+  <a href="#/atur" data-tab="atur"><span class="ni" data-ic="atur"></span><b>Atur</b></a>
+</nav>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-box clay" role="dialog" aria-modal="true" aria-labelledby="sheetJudul">
+    <h2 id="sheetJudul">Meeting baru</h2>
+    <button type="button" class="pil clay" data-pilih="unggah"><span class="i3 c-sage" data-ic="unggah"></span><span><b>Unggah rekaman</b><small>Untuk meeting panjang. Pakai file dari perekam suara HP.</small></span></button>
+    <button type="button" class="pil clay" data-pilih="rekam"><span class="i3 c-coral" data-ic="mic"></span><span><b>Rekam di sini</b><small>Untuk obrolan singkat. Layar harus tetap menyala.</small></span></button>
+    <button type="button" class="link" data-tutup>Batal</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="./javascript.js"></script>
+</body>
+</html>
