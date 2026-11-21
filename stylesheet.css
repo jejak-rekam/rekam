@@ -97,7 +97,6 @@ label.lb{display:block;font-size:14px;font-weight:800;margin:4px 2px 8px}
 .centang{width:30px;height:30px;border-radius:10px;border:0;flex:none;background:var(--well);box-shadow:inset 0 2px 4px rgba(150,105,70,.2)}
 .centang svg{width:16px;height:16px}
 .mini{border-radius:24px;padding:14px;display:flex;flex-direction:column;gap:8px}.mini h3{font-size:14px;font-weight:900}.mini p{font-size:12px;font-weight:700;line-height:1.5}
-.peta svg{width:100%;height:auto;display:block}
 .trans{font-size:13px;line-height:1.6;font-weight:600}.trans p{margin-bottom:8px}.trans b{color:var(--sage)}
 .link{background:none;border:0;color:#3F6B58;font-size:14px;font-weight:800;text-decoration:underline;padding:12px;display:block;margin:0 auto}
 /* nav */
@@ -122,3 +121,12 @@ label.lb{display:block;font-size:14px;font-weight:800;margin:4px 2px 8px}
 .toast[hidden]{display:none}
 .panduan{font-size:13px;font-weight:700;line-height:1.6;color:var(--sub)}.panduan ol{margin:6px 0 0;padding-left:20px}
 @media (min-width:700px){#app{padding-top:28px}}
+
+.sx-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sx-angka{border-radius:18px;padding:10px 12px}.sx-angka small{font-size:11px;font-weight:800;color:var(--sub);display:block}.sx-angka b{font-size:17px;font-weight:900}
+.sx-poin{font-size:14px;font-weight:700;line-height:1.45;margin:0 0 8px;padding-left:16px;position:relative}.sx-poin:before{content:'';position:absolute;left:2px;top:8px;width:7px;height:7px;border-radius:9px;background:var(--lilac)}
+.sx-langkah{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}.sx-langkah>span{width:28px;height:28px;border-radius:10px;flex:none;display:grid;place-items:center;font-size:13px;font-weight:900}.sx-langkah p{font-size:14px;font-weight:700;line-height:1.4;margin:3px 0 0}
+.sx-kutip{margin:0 0 10px;padding:12px 14px;border-radius:18px;background:var(--p-sage);font-size:14px;font-weight:900;line-height:1.45;color:#2F4A3E}.sx-kutip small{display:block;font-weight:700;font-size:12px;margin-top:4px;color:var(--sub)}
+.sx-ayat{margin-bottom:12px;padding:12px 14px;border-radius:18px;background:var(--p-butter)}.sx-ayat b{font-size:14px;font-weight:900;margin-right:8px}.sx-ayat .pill{font-size:11px}.sx-ayat p{font-size:14px;font-weight:700;line-height:1.5;margin:6px 0 0}
+.pill.kuning{background:#F7E2B0;color:#7A5A12}
+.sx-istilah{display:flex;flex-direction:column;padding:8px 0;border-bottom:2px dashed var(--well)}.sx-istilah b{font-size:14px;font-weight:900}.sx-istilah span{font-size:13px;font-weight:700;color:var(--sub)}
+.sx-pesan{white-space:pre-wrap;font-size:14px;font-weight:600;line-height:1.5;padding:12px 14px;border-radius:18px;background:var(--well)}

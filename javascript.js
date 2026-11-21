@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.2.0',
+  VERSI: '1.3.0',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -165,33 +165,56 @@ async function unggahKeGemini(blob, mime, onProg) {
 const hapusFileGemini = name => name && fetch(CONFIG.API + '/v1beta/' + name, { method: 'DELETE', headers: { 'x-goog-api-key': S0.kunci } }).catch(() => {});
 
 const A = t => ({ type: 'ARRAY', items: t }), STR = { type: 'STRING' }, O = (p, req) => ({ type: 'OBJECT', properties: p, required: req || Object.keys(p) });
+/* Template per jenis rekaman: AI wajib mengisi bagian-bagian ini dengan urutan dan judul yang sama */
+const BENTUK = ['daftar', 'centang', 'langkah', 'angka', 'linimasa', 'kutipan', 'ayat', 'istilah', 'pesan'];
+const TEMPLATE = {
+  meeting: { nama: 'Meeting', orang: 'Meeting dengan siapa?', contoh: 'Bu Rina', tugas: true, seksi: [
+    ['Sudah disepakati', 'centang', 'hal yang sudah disepakati bersama'],
+    ['Angka & tanggal penting', 'angka', 'harga, jumlah, persen, tanggal penting; label = nama angkanya (maks 4 kata), teks = nilainya singkat'],
+    ['Linimasa', 'linimasa', 'jadwal dan tenggat berurutan; label = hari/tanggal singkat, teks = kegiatan, ket = siapa'],
+    ['Jalannya meeting', 'linimasa', 'urutan obrolan; label = menit dari awal (m:ss), teks = topik, ket = keterangan singkat'],
+    ['Pertanyaan untuk meeting berikutnya', 'daftar', 'hal yang belum jelas atau perlu ditanyakan/disiapkan di pertemuan berikutnya'],
+    ['Kalimat penting', 'kutipan', 'maksimal 3; teks = kalimat asli seperti diucapkan (boleh bahasa Jawa), ket = artinya dalam bahasa Indonesia dan siapa yang bilang'],
+    ['Draf pesan tindak lanjut', 'pesan', 'SATU pesan WhatsApp sopan dari pemilik HP kepada orang itu: terima kasih, ringkasan kesepakatan, tugas dan tanggalnya; tulis di isi[0].teks']] },
+  khotbah: { nama: 'Khotbah', orang: 'Pengkhotbah / gereja', contoh: 'Pdt. Andreas · GKJ', tugas: false, seksi: [
+    ['Ayat yang dibahas', 'ayat', 'label = referensi ayat (mis. Mazmur 100:5), teks = isi ayatnya. Kalau ayat DIBACAKAN di rekaman, tulis persis seperti yang dibacakan dan ket = "dibacakan". Kalau hanya disebut, tulis isinya dari Alkitab Terjemahan Baru dan ket = "cek di Alkitab"'],
+    ['Kalimat yang menguatkan', 'kutipan', 'maksimal 3 kalimat pengkhotbah yang paling menguatkan; ket boleh kosong'],
+    ['Penerapan minggu ini', 'daftar', 'hal praktis yang bisa dilakukan minggu ini'],
+    ['Pertanyaan renungan', 'daftar', 'pertanyaan untuk direnungkan sendiri atau dibahas di komsel']] },
+  kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: true, seksi: [
+    ['Istilah penting', 'istilah', 'label = istilah/kosakata, teks = artinya singkat'],
+    ['Langkah praktik', 'langkah', 'langkah-langkah yang diajarkan, berurutan'],
+    ['Belum terjawab', 'daftar', 'pertanyaan yang belum terjawab atau perlu dipelajari lagi']] }
+};
+const templateDari = jenis => TEMPLATE[jenis] || null; // jenis lain (diisi sendiri): AI yang menyusun bagian
+const namaJenis = jenis => TEMPLATE[jenis]?.nama || jenis || 'Meeting';
 const SKEMA = O({
   judul: STR, inti: STR, penutup: STR,
   bagian: A(STR),
   poin: A(O({ bagian: STR, judul: STR, isi: STR, ikon: { type: 'STRING', format: 'enum', enum: Object.keys(ILL) } })),
-  sepakat: A(STR), tanya: A(STR),
   tugas: A(O({ apa: STR, siapa: STR, kapan: STR, selesai: { type: 'BOOLEAN' } }, ['apa', 'siapa', 'kapan'])),
-  kutipan: A(O({ asli: STR, arti: STR, siapa: STR })),
-  alur: A(O({ waktu: STR, judul: STR, ket: STR }))
+  seksi: A(O({ judul: STR, bentuk: { type: 'STRING', format: 'enum', enum: BENTUK }, isi: A(O({ teks: STR, label: STR, ket: STR }, ['teks'])) }, ['judul', 'bentuk', 'isi']))
 });
-function buatPrompt(j) {
-  return `Kamu pencatat meeting yang teliti. Dengarkan seluruh rekaman ini sampai habis.
-Bahasa rekaman bisa campuran Indonesia dan Jawa (atau bahasa daerah lain). Tulis semua jawaban dalam bahasa Indonesia sehari-hari yang sederhana, bukan bahasa kaku.
-Info: meeting dengan "${j.nama}". Topik: "${j.topik || 'tidak disebut'}". Durasi rekaman kira-kira ${durasiTeks(j.durasi) || 'tidak diketahui'}.
+function aturanSeksi(jenis) {
+  const t = templateDari(jenis);
+  if (t) return `- seksi: WAJIB berisi bagian-bagian ini, dengan judul dan bentuk persis seperti di bawah dan urutan yang sama. Kalau tidak ada isinya, isi dengan daftar kosong:\n${t.seksi.map(([a, b, c], i) => `  ${i + 1}. judul "${a}", bentuk "${b}": ${c}`).join('\n')}`;
+  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
+}
+function buatPrompt(j, sumber = 'rekaman', n = 1) {
+  const jenis = j.jenis || 'meeting', t = templateDari(jenis);
+  const pembuka = { rekaman: 'Dengarkan seluruh rekaman ini sampai habis. Bahasanya bisa campuran Indonesia dan Jawa (atau bahasa daerah lain).', foto: `Berikut ${n} foto (misalnya slide, papan tulis, catatan, atau dokumen). Baca semua tulisan, angka, dan gambar penting di foto.`, pdf: 'Berikut sebuah dokumen PDF. Baca seluruh isinya, termasuk tabel dan gambar.' }[sumber];
+  return `Kamu pencatat yang teliti. Jenis acara: ${namaJenis(jenis)}. ${pembuka}
+Tulis semua jawaban dalam bahasa Indonesia sehari-hari yang sederhana, bukan bahasa kaku.
+Info: ${t ? t.orang.replace('?', '') : 'dengan'} "${j.nama}". Topik: "${j.topik || 'tidak disebut'}".${sumber === 'rekaman' ? ` Durasi kira-kira ${durasiTeks(j.durasi) || 'tidak diketahui'}.` : ''}
 
 Aturan:
-- Jangan mengarang. Tulis hanya yang benar-benar dibicarakan. Bagian yang tidak jelas terdengar tulis "(tidak jelas)".
-- judul: topik utama meeting, maksimal 6 kata.
-- inti: 1 kalimat (maksimal 20 kata) tentang inti meeting.
-- bagian: kelompokkan obrolan menurut topik. Meeting pendek 1-2 bagian, meeting panjang 3-6 bagian. Nama bagian 1-2 kata.
-- poin: jumlahnya menyesuaikan panjang meeting. Kurang dari 15 menit: 3-4 poin. 15-45 menit: 4-6 poin. Lebih dari 45 menit: 6-10 poin. Pilih yang paling penting. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" harus sama persis dengan salah satu nama di daftar bagian. Pilih ikon yang paling cocok.
-- sepakat: hal yang sudah disepakati bersama.
-- tugas: siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan dua pekerjaan dalam satu baris. Kalau waktunya tidak disebut, isi kapan dengan "".
-- tanya: hal yang belum jelas dan perlu ditanyakan lagi.
-- kutipan: maksimal 3 kalimat penting. "asli" persis seperti diucapkan (boleh bahasa Jawa), "arti" terjemahannya ke bahasa Indonesia.
-- alur: urutan jalannya meeting per bagian, dengan waktu mulai dari awal rekaman (format m:ss atau j:mm:ss).
-- penutup: langkah berikutnya yang paling penting, 1 kalimat pendek.
-- Kalau tidak ada isinya, kirim daftar kosong.${j.potongan ? `\n\nPENTING: rekaman ini adalah bagian ${j.potongan.k} dari ${j.potongan.N} dari SATU meeting yang sama, dimulai pada menit ke-${j.potongan.mulai} meeting. Ringkas hanya isi bagian ini. Waktu di "alur" dihitung dari awal meeting (tambahkan ${j.potongan.mulai} menit).` : ''}`;
+- Jangan mengarang. Tulis hanya yang benar-benar ada di ${sumber}. Bagian yang tidak jelas tulis "(tidak jelas)".
+- judul: topik utama, maksimal 6 kata. inti: 1 kalimat (maksimal 20 kata).
+- bagian: kelompokkan isi menurut topik (1-6 topik, 1-2 kata).
+- poin: poin paling penting. Isi pendek 3-4 poin, sedang 4-6, panjang 6-10. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian. Pilih ikon yang cocok.
+- tugas: ${t && !t.tugas ? 'isi hanya kalau ada tugas yang jelas disebut (siapa mengerjakan apa); kalau tidak ada, daftar kosong.' : 'siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan. Kalau waktunya tidak disebut, kapan = "".'}
+${aturanSeksi(jenis)}
+- penutup: hal terpenting berikutnya (langkah berikutnya atau pesan utama), 1 kalimat pendek.${j.potongan ? `\n\nPENTING: rekaman ini adalah bagian ${j.potongan.k} dari ${j.potongan.N} dari SATU acara yang sama, dimulai pada menit ke-${j.potongan.mulai}. Ringkas hanya isi bagian ini. Waktu di linimasa dihitung dari awal acara (tambahkan ${j.potongan.mulai} menit).` : ''}${sumber === 'foto' ? '\n- Untuk waktu di linimasa yang dari foto, pakai nomor foto, misalnya "Foto 1-3".' : ''}`;
 }
 /* Jawaban AI dikirim sedikit demi sedikit (streaming) supaya sambungan tidak "diam" lalu diputus jaringan */
 async function mintaRingkasan(m, body, onTeks) {
@@ -266,34 +289,42 @@ const maju = (lo, hi, label = '') => (n, blok) => { // bar kemajuan mengikuti ja
   if (!n) return blok === 'mikir' && setTahap(label + 'Mencari poin penting…', lo + (hi - lo) * 0.3);
   setTahap(label + 'Menulis kartu…', Math.min(hi, lo + (hi - lo) * (0.4 + 0.6 * Math.min(1, n / 5000))), 'Jawaban sedang diterima. Jangan tutup aplikasi.');
 };
-const promptFoto = (j, n) => buatPrompt({ ...j, potongan: null }).replace(/^[^\n]*\n[^\n]*\n/, `Kamu pencatat meeting yang teliti. Berikut ${n} foto dari sebuah meeting (misalnya slide presentasi, papan tulis, catatan, atau dokumen). Baca semua tulisan, angka, dan gambar penting di foto.\nTulis semua jawaban dalam bahasa Indonesia sehari-hari yang sederhana.\n`) + '\n- Untuk foto: di "alur" isi waktu dengan nomor foto, misalnya "Foto 1-3".';
-const rangkumFoto = (data, j, mj) => mintaJSON([...data.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })), { text: promptFoto(j, data.length) }], mj);
+const rangkumFoto = (data, j, mj) => mintaJSON([...data.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })), { text: buatPrompt({ ...j, potongan: null }, 'foto', data.length) }], mj);
 const kecilkanFoto = f => new Promise((ok, no) => { // foto dikecilkan di HP (sisi terpanjang 1600 px) supaya cepat & hemat kuota
   const u = URL.createObjectURL(f), im = new Image();
   im.onload = () => { const s = Math.min(1, 1600 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => b ? ok(b) : no(), 'image/jpeg', 0.82); };
   im.onerror = () => { URL.revokeObjectURL(u); no(new Error('foto rusak')); }; im.src = u;
 });
 const keBase64 = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(b); });
-const rangkum = (file, j, mj) => mintaJSON([{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt(j) }], mj);
+const rangkum = (file, j, mj, sumber = 'rekaman') => mintaJSON([{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt(j, sumber) }], mj);
 function gabungkan(list, j, mj) { // satukan ringkasan beberapa bagian jadi satu kesimpulan menyeluruh
-  const data = list.map((h, i) => ({ bagian_rekaman: i + 1, ...h, tugas: h.tugas.map(({ apa, siapa, kapan, selesai }) => ({ apa, siapa, kapan, selesai })) }));
-  return mintaJSON([{ text: `Kamu pencatat meeting yang teliti. Di bawah ini ada ringkasan dari ${list.length} bagian (potongan rekaman dan/atau kumpulan foto) dari SATU meeting dengan "${j.nama}"${j.topik ? ` (topik: ${j.topik})` : ''}.
-Satukan semuanya menjadi SATU kesimpulan menyeluruh, seolah-olah merangkum seluruh meeting sekaligus. Tulis dalam bahasa Indonesia sehari-hari yang sederhana.
+  const data = list.map((h, i) => ({ bagian_ke: i + 1, ...h, seksi: seksiDari(h), tugas: h.tugas.map(({ apa, siapa, kapan, selesai }) => ({ apa, siapa, kapan, selesai })) }));
+  const t = templateDari(j.jenis || 'meeting');
+  return mintaJSON([{ text: `Kamu pencatat yang teliti. Jenis acara: ${namaJenis(j.jenis)}. Di bawah ini ada ringkasan dari ${list.length} bagian (potongan rekaman, kumpulan foto, dan/atau dokumen) dari SATU acara dengan "${j.nama}"${j.topik ? ` (topik: ${j.topik})` : ''}.
+Satukan semuanya menjadi SATU kesimpulan menyeluruh, seolah-olah merangkum seluruh acara sekaligus. Tulis dalam bahasa Indonesia sehari-hari yang sederhana.
 
 Aturan:
 - Jangan mengarang. Pakai hanya isi dari data.
-- judul (maksimal 6 kata) dan inti (1 kalimat, maksimal 25 kata) untuk keseluruhan meeting.
-- bagian: kelompokkan ulang menurut topik keseluruhan (2-6 topik, 1-2 kata), BUKAN per bagian rekaman.
-- poin: 6-10 poin paling penting dari keseluruhan meeting. Gabungkan poin yang mirip. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian. Pilih ikon yang cocok.
-- sepakat: semua kesepakatan, tanpa dobel.
-- tugas: gabungkan tugas yang sama. Satu baris = satu pekerjaan. Kalau di data ada selesai true, tetap tulis selesai true.
-- tanya: hal yang masih belum jelas; buang yang ternyata sudah terjawab di bagian lain.
-- kutipan: maksimal 3 yang paling penting.
-- alur: urut waktu dari awal sampai akhir meeting; satukan yang berurutan dengan topik sama; maksimal 10.
-- penutup: langkah berikutnya yang paling penting, 1 kalimat pendek.
+- judul (maksimal 6 kata) dan inti (1 kalimat, maksimal 25 kata) untuk keseluruhan.
+- bagian: kelompokkan ulang menurut topik keseluruhan (2-6 topik, 1-2 kata), BUKAN per bagian data.
+- poin: 6-10 poin paling penting dari keseluruhan. Gabungkan yang mirip. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian.
+- tugas: gabungkan yang sama, satu baris = satu pekerjaan. Kalau di data selesai true, tetap tulis selesai true.
+${aturanSeksi(j.jenis || 'meeting')}
+- Isi tiap seksi: gabungkan dari semua bagian tanpa dobel; linimasa diurutkan menurut waktu; buang pertanyaan yang ternyata sudah terjawab di bagian lain.${t && t.seksi.some(s => s[1] === 'pesan') ? ' Draf pesan ditulis ulang untuk keseluruhan.' : ''}
+- penutup: hal terpenting berikutnya, 1 kalimat pendek.
 
 DATA:
 ${JSON.stringify(data)}` }], mj);
+}
+const GAYA = { centang: ['sage', 'star'], angka: ['coral', 'star'], linimasa: ['blue', 'jam'], daftar: ['lilac', 'tanya'], kutipan: ['sage', 'kutip'], ayat: ['butter', 'kutip'], istilah: ['blue', 'star'], langkah: ['coral', 'tugas'], pesan: ['sage', 'kirim'] };
+function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
+  if (Array.isArray(h.seksi)) return h.seksi;
+  return [
+    ['Jalannya meeting', 'linimasa', (h.alur || []).map(a => ({ label: a.waktu, teks: a.judul, ket: a.ket }))],
+    ['Sudah disepakati', 'centang', (h.sepakat || []).map(teks => ({ teks }))],
+    ['Perlu ditanya', 'daftar', (h.tanya || []).map(teks => ({ teks }))],
+    ['Kalimat penting', 'kutipan', (h.kutipan || []).map(k => ({ teks: k.asli, ket: [k.arti, k.siapa].filter(Boolean).join(' — ') }))]
+  ].map(([judul, bentuk, isi]) => ({ judul, bentuk, isi })).filter(s => s.isi.length);
 }
 function rapikan(o) { // bersihkan & batasi isi dari AI sebelum disimpan
   const arr = (a, n) => Array.isArray(a) ? a.slice(0, n) : [];
@@ -302,11 +333,8 @@ function rapikan(o) { // bersihkan & batasi isi dari AI sebelum disimpan
     judul: potong(o.judul, 80) || 'Ringkasan meeting', inti: potong(o.inti, 240), penutup: potong(o.penutup, 160),
     bagian: bagian.length ? bagian : ['Umum'],
     poin: arr(o.poin, 12).map(p => ({ bagian: potong(p.bagian, 30), judul: potong(p.judul, 60), isi: potong(p.isi, 220), ikon: ILL[p.ikon] ? p.ikon : 'ide' })).filter(p => p.judul),
-    sepakat: arr(o.sepakat, 15).map(s => potong(s, 200)).filter(Boolean),
-    tanya: arr(o.tanya, 10).map(s => potong(s, 200)).filter(Boolean),
     tugas: arr(o.tugas, 25).map(t => ({ id: uid(), apa: potong(t.apa, 200), siapa: potong(t.siapa, 40), kapan: potong(t.kapan, 40), selesai: t.selesai === true })).filter(t => t.apa),
-    kutipan: arr(o.kutipan, 3).map(k => ({ asli: potong(k.asli, 240), arti: potong(k.arti, 240), siapa: potong(k.siapa, 40) })).filter(k => k.asli),
-    alur: arr(o.alur, 12).map(a => ({ waktu: potong(a.waktu, 10), judul: potong(a.judul, 60), ket: potong(a.ket, 160) }))
+    seksi: arr(seksiDari(o), 8).map(s => ({ judul: potong(s.judul, 40), bentuk: BENTUK.includes(s.bentuk) ? s.bentuk : 'daftar', isi: arr(s.isi, 15).map(x => ({ teks: potong(x.teks, s.bentuk === 'pesan' ? 1500 : 400), label: potong(x.label, 40), ket: potong(x.ket, 200) })).filter(x => x.teks) })).filter(s => s.judul && s.isi.length)
   };
 }
 
@@ -449,10 +477,10 @@ R.orang = () => {
 R.orangDetail = id => {
   const o = orangById(decodeURIComponent(id)); if (!o) return buka('#/orang');
   const ms = meetingOrang(o.id), w = o.warna || 'coral';
-  const nKep = ms.reduce((n, m) => n + m.hasil.sepakat.length, 0);
+  const nKep = ms.reduce((n, m) => n + seksiDari(m.hasil).filter(s => s.bentuk === 'centang').reduce((a, s) => a + s.isi.length, 0), 0);
   const grup = {}; ms.forEach(m => { const k = new Date(m.tanggal).toDateString(); (grup[k] = grup[k] || []).push(m); });
   const dobel = Object.values(grup).filter(g => g.length > 1);
-  const ingat = [...ms.flatMap(m => m.hasil.tugas.filter(t => !t.selesai).map(t => t.apa)), ...(ms[0]?.hasil.tanya || [])].slice(0, 4);
+  const ingat = [...ms.flatMap(m => m.hasil.tugas.filter(t => !t.selesai).map(t => t.apa)), ...(ms[0] ? seksiDari(ms[0].hasil).filter(s => s.bentuk === 'daftar' && /tanya|meeting berikut/i.test(s.judul)).flatMap(s => s.isi.map(x => x.teks)) : [])].slice(0, 4);
   $('#app').innerHTML = atas('') + `
   <section class="kotak clay" style="background:var(--peach)"><div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><span class="i3 av c-${w}" style="width:60px;height:60px;border-radius:20px;font-size:21px"><span>${esc(inisial(o.nama))}</span></span><div><h2 style="font-size:23px;font-weight:900">${esc(o.nama)}</h2><small style="font-size:13px;font-weight:700;color:#6E4A38">Sejak ${esc(tglPendek(o.dibuat))}</small></div></div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${[['meeting', ms.length], ['tugas', tugasTerbuka(ms)], ['keputusan', nKep]].map(([l, n]) => `<div class="clay" style="background:var(--card);border-radius:18px;padding:10px 12px"><b style="font-size:22px;font-weight:900;display:block">${n}</b><small style="font-size:12px;font-weight:700;color:var(--sub)">${l}</small></div>`).join('')}</div></section>
@@ -463,8 +491,8 @@ R.orangDetail = id => {
   <button class="link" id="hapusOrang" style="color:#A8331A">Hapus ${esc(o.nama)} dan semua meeting-nya</button>`;
   document.querySelectorAll('[data-satukan]').forEach(b => b.onclick = () => tombolProses(b, 'AI sedang menyatukan…', async () => {
     const g = grup[b.dataset.satukan].slice().sort((a, c) => a.tanggal - c.tanggal);
-    let h; try { h = await gabungkan(g.map(m => m.hasil), { nama: o.nama, topik: '' }, () => {}); } catch (x) { return toast(x.message || 'Gagal menyatukan. Coba lagi.', 5000); }
-    const baru = { id: uid(), orangId: o.id, tanggal: g[0].tanggal, durasi: g.reduce((a, m) => a + (m.durasi || 0), 0), topik: '', hasil: h, versi: 1 };
+    let h; try { h = await gabungkan(g.map(m => m.hasil), { nama: o.nama, topik: '', jenis: g[0].jenis || 'meeting' }, () => {}); } catch (x) { return toast(x.message || 'Gagal menyatukan. Coba lagi.', 5000); }
+    const baru = { id: uid(), orangId: o.id, tanggal: g[0].tanggal, durasi: g.reduce((a, m) => a + (m.durasi || 0), 0), topik: '', jenis: g[0].jenis, hasil: h, versi: 1 };
     try { await DB.ganti([baru], g.map(m => m.id)); } catch { return toast('Gagal menyimpan. Coba lagi.'); } // potongan lama baru dihapus kalau gabungan tersimpan
     S0.meeting = [baru, ...S0.meeting.filter(m => !g.includes(m))].sort((a, c) => c.tanggal - a.tanggal); perbaruiLencana();
     toast('Sudah disatukan jadi satu kesimpulan'); buka('#/m/' + encodeURIComponent(baru.id));
@@ -538,7 +566,10 @@ R.baru = q => {
   const saran = [...S0.orang].sort((a, b) => (b.dibuat || 0) - (a.dibuat || 0)).slice(0, 6);
   $('#app').innerHTML = atas('Meeting baru') + `
   <section class="kotak clay">
-    <label class="lb" for="nama">Meeting dengan siapa?</label>
+    <label class="lb">Jenis rekaman</label>
+    <div class="chips" id="jenisChips">${[...Object.entries(TEMPLATE).map(([k, t]) => [k, t.nama]), ['lain', 'Lainnya']].map(([k, n], i) => `<button type="button" class="chip ${i ? 'clay' : 'on i3 c-sage'}" data-jenis="${k}"><span>${esc(n)}</span></button>`).join('')}</div>
+    <input class="in" id="jenisLain" maxlength="30" autocomplete="off" placeholder="Tulis jenisnya, mis. Les bahasa Inggris" hidden style="margin-top:8px">
+    <label class="lb" for="nama" id="lbNama">Meeting dengan siapa?</label>
     <input class="in" id="nama" maxlength="40" autocomplete="off" placeholder="Bu Rina">
     ${saran.length ? `<div class="chips">${saran.map(o => `<button type="button" class="chip clay" data-nama="${esc(o.nama)}">${esc(o.nama)}</button>`).join('')}</div>` : ''}
     <div class="err" id="errNama" hidden></div>
@@ -552,14 +583,20 @@ R.baru = q => {
     </section>`
     : `<input type="file" id="fileIn" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.flac,.webm" multiple hidden>
     <button type="button" class="file clay" id="pilihFile"><span class="i3 ic c-sage" style="width:52px;height:52px;border-radius:17px">${svg('unggah')}</span><span class="tx"><b id="fNama">Pilih file rekaman</b><small id="fInfo">Bisa pilih beberapa file sekaligus. Rekaman panjang dipotong otomatis.</small></span></button>`}
-  <section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('unggah')}</span><h3 style="flex:1">Foto (boleh kosong)</h3><button type="button" class="chip clay" id="tambahFoto">+ Tambah foto</button></div>
-    <input type="file" id="fotoIn" accept="image/*" multiple hidden>
+  <section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('unggah')}</span><h3 style="flex:1">Foto & PDF (boleh kosong)</h3><button type="button" class="chip clay" id="tambahFoto">+ Tambah</button></div>
+    <input type="file" id="fotoIn" accept="image/*,application/pdf,.pdf" multiple hidden>
     <div id="daftarFoto" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"></div>
-    <p class="hint" id="infoFoto">Slide, papan tulis, atau catatan. Dari galeri atau kamera, bisa banyak.</p></section>
+    <p class="hint" id="infoFoto">Slide, papan tulis, catatan, atau file PDF. Bisa banyak.</p></section>
   <div class="err" id="errFile" hidden></div>
   <button type="button" class="btn utama i3 c-coral" id="btnRangkum" style="width:100%"><span>Rangkum sekarang</span></button>
   <p class="hint" style="text-align:center">Pakai WiFi supaya cepat. Rekaman dikirim ke Google Gemini untuk dirangkum, lalu dihapus dari sana.</p>`;
-  let berkas = [];
+  let berkas = [], jenis = 'meeting';
+  document.querySelectorAll('[data-jenis]').forEach(b => b.onclick = () => {
+    document.querySelectorAll('[data-jenis]').forEach(x => x.className = 'chip ' + (x === b ? 'on i3 c-sage' : 'clay'));
+    const lain = b.dataset.jenis === 'lain', t = TEMPLATE[b.dataset.jenis];
+    jenis = lain ? '' : b.dataset.jenis; $('#jenisLain').hidden = !lain; if (lain) $('#jenisLain').focus();
+    $('#lbNama').textContent = t ? t.orang : 'Dengan siapa / di mana?'; $('#nama').placeholder = t ? t.contoh : 'Miss Ana · kursus';
+  });
   const nama = $('#nama'), errN = $('#errNama'), errF = $('#errFile'), salah = t => { errF.textContent = t; errF.hidden = false; return null; };
   document.querySelectorAll('[data-nama]').forEach(b => b.onclick = () => { nama.value = b.dataset.nama; errN.hidden = true; });
   nama.oninput = () => errN.hidden = true;
@@ -587,22 +624,27 @@ R.baru = q => {
   else pasangPerekam(pasang);
   if (!rekam && q.get('dibagikan')) ambilKiriman(pasang);
   let fotos = []; const daftar = $('#daftarFoto');
-  const gambarFoto = () => { daftar.innerHTML = fotos.map((f, i) => `<div style="position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--well)">${f.url ? `<img src="${f.url}" alt="Foto ${i + 1}" style="width:100%;height:100%;object-fit:cover">` : ''}<button type="button" data-hapusfoto="${i}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:999px;border:0;background:rgba(74,52,40,.75);color:#fff;font-weight:900">×</button></div>`).join(''); $('#infoFoto').textContent = fotos.length ? `${fotos.length} foto dipilih.` : 'Slide, papan tulis, atau catatan. Dari galeri atau kamera, bisa banyak.'; };
+  const gambarFoto = () => { daftar.innerHTML = fotos.map((f, i) => `<div style="position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--well)">${f.url ? `<img src="${f.url}" alt="Foto ${i + 1}" style="width:100%;height:100%;object-fit:cover">` : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:4px;text-align:center"><b style="font-size:13px;font-weight:900;color:#A8331A">PDF</b><small style="font-size:9px;font-weight:700;word-break:break-all;line-height:1.2">${esc((f.nama || '').slice(0, 24))}</small></div>`}<button type="button" data-hapusfoto="${i}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:999px;border:0;background:rgba(74,52,40,.75);color:#fff;font-weight:900">×</button></div>`).join(''); const nP = fotos.filter(f => f.pdf).length, nF = fotos.length - nP; $('#infoFoto').textContent = fotos.length ? [nF && nF + ' foto', nP && nP + ' PDF'].filter(Boolean).join(' dan ') + ' dipilih.' : 'Slide, papan tulis, catatan, atau file PDF. Bisa banyak.'; };
   $('#tambahFoto').onclick = () => $('#fotoIn').click();
   $('#fotoIn').onchange = async e => {
-    const fs = [...e.target.files].filter(f => f.type.startsWith('image/')); e.target.value = ''; if (!fs.length) return;
+    const semua = [...e.target.files]; e.target.value = '';
+    const pdf = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    for (const f of semua.filter(pdf)) { if (f.size > 50 * 1048576) toast(`"${f.name}" lebih dari 50 MB, dilewati.`, 4000); else fotos.push({ pdf: f, nama: f.name }); }
+    const fs = semua.filter(f => f.type.startsWith('image/')); gambarFoto(); if (!fs.length) return;
     const btn = $('#tambahFoto'); await tombolProses(btn, 'Menyiapkan foto…', async () => {
       for (const f of fs) { try { const b = await kecilkanFoto(f); fotos.push({ blob: b, url: URL.createObjectURL(b) }); } catch { toast('Ada foto yang tidak bisa dibaca, dilewati.'); } gambarFoto(); }
     });
   };
-  daftar.onclick = e => { const b = e.target.closest('[data-hapusfoto]'); if (!b) return; const [f] = fotos.splice(+b.dataset.hapusfoto, 1); URL.revokeObjectURL(f.url); gambarFoto(); };
+  daftar.onclick = e => { const b = e.target.closest('[data-hapusfoto]'); if (!b) return; const [f] = fotos.splice(+b.dataset.hapusfoto, 1); if (f.url) URL.revokeObjectURL(f.url); gambarFoto(); };
   $('#btnRangkum').onclick = () => {
     const n = nama.value.trim().replace(/\s+/g, ' ');
-    if (!n) { errN.textContent = 'Tulis dulu nama orangnya.'; errN.hidden = false; nama.focus(); return; }
+    if (!n) { errN.textContent = 'Tulis dulu namanya.'; errN.hidden = false; nama.focus(); return; }
     if (rekam && REC.aktif) { errF.textContent = 'Hentikan rekaman dulu.'; errF.hidden = false; return; }
-    if (!berkas.length && !fotos.length) { errF.textContent = rekam ? 'Rekam dulu obrolannya atau tambahkan foto.' : 'Pilih rekaman atau tambahkan foto dulu.'; errF.hidden = false; return; }
-    if (fotos.some(f => !f.blob)) { errF.textContent = 'Foto masih disiapkan, tunggu sebentar.'; errF.hidden = false; return; }
-    JOB = { foto: fotos.map(f => f.blob), nama: n, topik: $('#topik').value.trim().slice(0, 60), sumber: berkas, durasi: berkas.reduce((a, b) => a + (b.durasi || 0), 0), bagian: null };
+    if (!berkas.length && !fotos.length) { errF.textContent = rekam ? 'Rekam dulu obrolannya atau tambahkan foto/PDF.' : 'Pilih rekaman atau tambahkan foto/PDF dulu.'; errF.hidden = false; return; }
+    const jn = jenis || $('#jenisLain').value.trim().replace(/\s+/g, ' ').slice(0, 30);
+    if (!jn) { errF.textContent = 'Tulis dulu jenis rekamannya.'; errF.hidden = false; $('#jenisLain').focus(); return; }
+    if (fotos.some(f => !f.blob && !f.pdf)) { errF.textContent = 'Foto masih disiapkan, tunggu sebentar.'; errF.hidden = false; return; }
+    JOB = { foto: fotos.filter(f => f.blob).map(f => f.blob), pdf: fotos.filter(f => f.pdf).map(f => f.pdf), jenis: jn, nama: n, topik: $('#topik').value.trim().slice(0, 60), sumber: berkas, durasi: berkas.reduce((a, b) => a + (b.durasi || 0), 0), bagian: null };
     buka('#/proses');
   };
 };
@@ -659,7 +701,7 @@ R.proses = () => {
     <div class="sub" id="pSub">Jangan tutup aplikasi dulu, ya.</div>
     <div class="bar"><div id="pBar" class="c-coral"></div></div>
     <div id="pAksi"></div></section>
-  <p class="hint" style="text-align:center">Meeting dengan ${esc(JOB.nama)}${JOB.durasi ? ' · ' + esc(durasiTeks(JOB.durasi)) : ''}</p>`;
+  <p class="hint" style="text-align:center">${esc(namaJenis(JOB.jenis))} · ${esc(JOB.nama)}${JOB.durasi ? ' · ' + esc(durasiTeks(JOB.durasi)) : ''}</p>`;
   prosesJalan();
 };
 let lamaT;
@@ -677,6 +719,7 @@ async function prosesJalan() {
       setTahap('Menyiapkan rekaman…', 2, j.durasi > POTONG_DETIK + 180 ? 'Rekaman panjang sedang dipotong per 30 menit.' : '');
       const bag = []; let mulai = 0;
       for (const s of j.sumber) for (const p of await potongRekaman(s)) { bag.push({ ...p, mulai, file: null, hasil: null }); mulai += p.durasi || 0; }
+      for (const f of j.pdf || []) bag.push({ blob: f, mime: 'application/pdf', pdf: true, file: null, hasil: null });
       for (let i = 0; i < (j.foto || []).length; i += 20) bag.push({ foto: j.foto.slice(i, i + 20), hasil: null }); // foto dikirim per 20
       j.bagian = bag;
     }
@@ -685,6 +728,12 @@ async function prosesJalan() {
       const p = j.bagian[k], lo = 3 + k * lebar, label = N > 1 ? `Bagian ${k + 1} dari ${N}: ` : '';
       if (p.hasil) continue; // sudah selesai sebelumnya (saat Coba lagi)
       if (p.foto) { setTahap(label + `Membaca ${p.foto.length} foto…`, lo + lebar * 0.2); p.hasil = await rangkumFoto(await Promise.all(p.foto.map(keBase64)), j, maju(lo + lebar * 0.3, lo + lebar, label)); p.foto = null; continue; }
+      if (p.pdf) {
+        if (!p.file) { setTahap(label + 'Mengirim PDF…', lo); p.file = await unggahKeGemini(p.blob, p.mime, f => setTahap(`${label}Mengirim PDF… ${Math.round(f * 100)}%`, lo + f * lebar * 0.4)); }
+        setTahap(label + 'Membaca PDF…', lo + lebar * 0.45);
+        p.hasil = await rangkum(p.file, { ...j, potongan: null }, maju(lo + lebar * 0.5, lo + lebar, label), 'pdf');
+        hapusFileGemini(p.file.name); p.file = null; p.blob = null; continue;
+      }
       if (!p.file) { setTahap(label + 'Mengirim rekaman…', lo); p.file = await unggahKeGemini(p.blob, p.mime, f => setTahap(`${label}Mengirim rekaman… ${Math.round(f * 100)}%`, lo + f * lebar * 0.4)); }
       setTahap(label + 'Mendengarkan obrolan…', lo + lebar * 0.45, (p.durasi || 0) > 15 * 60 ? 'Google perlu beberapa menit untuk mendengarkan. Jangan tutup aplikasi.' : '');
       p.hasil = await rangkum(p.file, { ...j, durasi: p.durasi, potongan: N > 1 ? { k: k + 1, N, mulai: Math.round(p.mulai / 60) } : null }, maju(lo + lebar * 0.5, lo + lebar, label));
@@ -694,7 +743,7 @@ async function prosesJalan() {
     setTahap('Menyimpan…', 97);
     let o = S0.orang.find(x => x.nama.toLowerCase() === j.nama.toLowerCase());
     const orangBaru = !o; if (!o) o = { id: uid(), nama: j.nama, warna: WARNA[S0.orang.length % 5], dibuat: Date.now() };
-    const m = { id: uid(), orangId: o.id, tanggal: Date.now(), durasi: j.durasi, topik: j.topik, hasil, versi: 1 };
+    const m = { id: uid(), orangId: o.id, tanggal: Date.now(), durasi: j.durasi, topik: j.topik, jenis: j.jenis, hasil, versi: 1 };
     await DB.putMany({ orang: [o], meeting: [m] }); // satu transaksi
     if (orangBaru) S0.orang.push(o);
     S0.meeting.unshift(m); perbaruiLencana(); JOB = null;
@@ -713,6 +762,21 @@ async function prosesJalan() {
 }
 
 /* ---- Hasil (kartu ringkasan) ---- */
+function seksiHtml(s, n) { // satu bagian di halaman hasil, tampilannya mengikuti bentuk
+  const [c, ik] = GAYA[s.bentuk] || GAYA.daftar, e = esc;
+  const isi = s.isi.map((x, i) => ({
+    centang: () => `<div class="cek">${svg('ok', HEX.sage)}<span>${e(x.teks)}</span></div>`,
+    angka: () => `<div class="sx-angka clay p-${WARNA[i % 5]}"><small>${e(x.label)}</small><b>${e(x.teks)}</b></div>`,
+    linimasa: () => `<div class="alur"><span class="w">${e(x.label)}</span><div class="t"><b>${e(x.teks)}</b><small>${e(x.ket)}</small></div></div>`,
+    daftar: () => `<p class="sx-poin">${e(x.teks)}</p>`,
+    langkah: () => `<div class="sx-langkah"><span class="i3 c-coral"><span>${i + 1}</span></span><p>${e(x.teks)}</p></div>`,
+    kutipan: () => `<blockquote class="sx-kutip">"${e(x.teks)}"${x.ket ? `<small>${e(x.ket)}</small>` : ''}</blockquote>`,
+    ayat: () => `<div class="sx-ayat"><b>${e(x.label)}</b>${x.ket ? `<span class="pill ${/dibaca/i.test(x.ket) ? 'ijo' : 'kuning'}">${e(x.ket)}</span>` : ''}<p>${e(x.teks)}</p></div>`,
+    istilah: () => `<div class="sx-istilah"><b>${e(x.label)}</b><span>${e(x.teks)}</span></div>`,
+    pesan: () => `<div class="sx-pesan">${e(x.teks)}</div><button class="btn clay" data-salin="${e(x.teks)}" style="width:100%;margin-top:10px">${svg('kirim', '#4A3428')}<span>Salin pesan</span></button>`
+  }[s.bentuk] || (() => ''))()).join('');
+  return `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-${c}">${svg(ik, '#fff', HEX[c])}</span><h3>${e(s.judul)}</h3></div><div class="${s.bentuk === 'angka' ? 'sx-grid' : ''}">${isi}</div></section>`;
+}
 R.hasil = id => {
   const m = S0.meeting.find(x => x.id === decodeURIComponent(id)); if (!m) return buka('#/');
   const h = m.hasil, o = orangById(m.orangId) || { nama: '?' };
@@ -721,19 +785,13 @@ R.hasil = id => {
   $('#app').innerHTML = `
   <div class="top"><button class="btn-ikon clay" data-back aria-label="Kembali">${svg('back', '#4A3428')}</button><span class="pill clay" style="background:var(--card);color:var(--ink);font-weight:800">${esc(o.nama)} · ${esc(tglPendek(m.tanggal))}${m.durasi ? ' · ' + esc(durasiTeks(m.durasi)) : ''}</span></div>
   <section class="poster clay">
-    <div class="kepala"><img src="./ippo.webp" alt=""><div class="isi"><small class="k">RINGKASAN MEETING</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
+    <div class="kepala"><img src="./ippo.webp" alt=""><div class="isi"><small class="k">RINGKASAN ${esc(namaJenis(m.jenis).toUpperCase())}</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
     ${h.bagian.length > 1 ? `<div class="filter" role="group" aria-label="Saring per bagian"><button class="chip on i3 c-sage" data-f="-1"><span>Semua</span></button>${h.bagian.map((b, i) => `<button class="chip clay" data-f="${i}">${i + 1} · ${esc(b)}</button>`).join('')}</div>` : ''}
     <div class="kartu">${h.poin.map(kartu).join('') || '<p class="kosong">Tidak ada poin penting.</p>'}</div>
     ${h.penutup ? `<div class="pita clay">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
   </section>
-  ${h.alur.length ? `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-blue">${svg('jam', '#fff', '#6F8FBC')}</span><h3>Jalannya meeting</h3></div>${h.alur.map(a => `<div class="alur"><span class="w">${esc(a.waktu)}</span><div class="t"><b>${esc(a.judul)}</b><small>${esc(a.ket)}</small></div></div>`).join('')}</section>` : ''}
-  ${h.sepakat.length ? `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-sage">${svg('star')}</span><h3>Sudah disepakati</h3></div>${h.sepakat.map(s => `<div class="cek">${svg('ok', '#5E8C7A')}<span>${esc(s)}</span></div>`).join('')}</section>` : ''}
   ${h.tugas.length ? `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('tugas', '#fff', '#E0A532')}</span><h3>Tugas</h3></div>${h.tugas.map(t => barisTugas(t, m, false)).join('')}</section>` : ''}
-  ${h.tanya.length || h.kutipan.length ? `<div class="dua" style="margin-bottom:14px;align-items:start">
-    ${h.tanya.length ? `<section class="mini clay p-lilac"><span class="i3 ic c-lilac" style="width:36px;height:36px">${svg('tanya', '#fff', '#9476AE')}</span><h3>Perlu ditanya</h3>${h.tanya.map(t => `<p class="t-lilac">${esc(t)}</p>`).join('')}</section>` : ''}
-    ${h.kutipan.map(k => `<section class="mini clay p-sage"><span class="i3 ic c-sage" style="width:36px;height:36px">${svg('kutip')}</span><h3>"${esc(k.asli)}"</h3><p class="t-sage">${esc(k.arti)}${k.siapa ? ' — ' + esc(k.siapa) : ''}</p></section>`).join('')}
-  </div>` : ''}
-  <section class="kotak clay peta"><div class="sek-h"><span class="i3 ic c-coral">${svg('star')}</span><h3>Peta alur</h3></div>${petaSvg(h)}</section>
+  ${seksiDari(h).map(seksiHtml).join('')}
   <div class="dua"><button class="btn clay" id="bSimpan">${svg('unduh', '#4A3428')}<span>Simpan gambar</span></button><button class="btn utama i3 c-coral" id="bKirim">${svg('kirim')}<span>Kirim ke WA</span></button></div>
   <button class="link" id="bHapus" style="color:#A8331A">Hapus meeting ini</button>`;
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
@@ -741,6 +799,7 @@ R.hasil = id => {
     document.querySelectorAll('[data-f]').forEach(x => { const on = x === b; x.className = 'chip ' + (on ? 'on i3 c-sage' : 'clay'); x.innerHTML = on ? `<span>${esc(x.textContent)}</span>` : esc(x.textContent); });
     document.querySelectorAll('.k1').forEach(k => k.hidden = f >= 0 && +k.dataset.bag !== f);
   });
+  document.querySelectorAll('[data-salin]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.salin); toast('Pesan disalin. Tinggal tempel di WA.'); } catch { toast('Gagal menyalin. Tekan lama teksnya untuk menyalin.'); } });
   $('#bSimpan').onclick = e => tombolProses(e.currentTarget, 'Sedang membuat gambar…', async () => {
     const fs = await gambarPoster(m, o).catch(e => { console.error(e); return null; }); if (!fs) return toast('Gagal membuat gambar. Coba lagi.');
     for (const f of fs) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 8000); await new Promise(s => setTimeout(s, 500)); }
@@ -748,7 +807,7 @@ R.hasil = id => {
   });
   $('#bKirim').onclick = e => tombolProses(e.currentTarget, 'Sedang menyiapkan…', async () => {
     const fs = await gambarPoster(m, o).catch(() => null);
-    const teks = `Ringkasan meeting dengan ${o.nama} (${tglPendek(m.tanggal)})\n${h.judul}\n\n${h.poin.map((p, i) => `${i + 1}. ${p.judul}: ${p.isi}`).join('\n')}${h.tugas.length ? `\n\nTugas:\n${h.tugas.map(t => `${t.selesai ? '✓' : '☐'} ${t.apa}${t.siapa || t.kapan ? ` (${[t.siapa, t.kapan].filter(Boolean).join(', ')})` : ''}`).join('\n')}` : ''}${h.penutup ? `\n\nLangkah berikutnya: ${h.penutup}` : ''}`;
+    const teks = `Ringkasan ${namaJenis(m.jenis).toLowerCase()} · ${o.nama} (${tglPendek(m.tanggal)})\n${h.judul}\n\n${h.poin.map((p, i) => `${i + 1}. ${p.judul}: ${p.isi}`).join('\n')}${h.tugas.length ? `\n\nTugas:\n${h.tugas.map(t => `${t.selesai ? '✓' : '☐'} ${t.apa}${t.siapa || t.kapan ? ` (${[t.siapa, t.kapan].filter(Boolean).join(', ')})` : ''}`).join('\n')}` : ''}${h.penutup ? `\n\nLangkah berikutnya: ${h.penutup}` : ''}`;
     if (fs && navigator.canShare?.({ files: fs })) { try { await navigator.share({ files: fs, text: teks }); } catch {} return; }
     window.open('https://wa.me/?text=' + encodeURIComponent(teks), '_blank', 'noopener');
   });
@@ -759,20 +818,6 @@ R.hasil = id => {
   });
 };
 
-/* Peta alur: judul di tengah, bagian di sekelilingnya */
-function petaSvg(h) {
-  const W = 340, H = 300, cx = W / 2, cy = H / 2, bag = h.bagian.slice(0, 6), n = bag.length;
-  const baris = (s, max = 14) => { const w = String(s).split(' '), out = ['']; w.forEach(x => { if ((out[out.length - 1] + ' ' + x).trim().length > max && out[out.length - 1]) out.push(x); else out[out.length - 1] = (out[out.length - 1] + ' ' + x).trim(); }); return out.slice(0, 2); };
-  const teks = (x, y, s, c, sz = 13, max) => { const l = baris(s, max); return l.map((t, i) => `<text x="${x}" y="${y + (i - (l.length - 1) / 2) * (sz + 3) + sz / 3}" text-anchor="middle" font-family="Nunito,sans-serif" font-size="${sz}" font-weight="800" fill="${c}">${esc(t)}</text>`).join(''); };
-  let g = '', node = '';
-  bag.forEach((b, i) => {
-    const a = -Math.PI / 2 + i * 2 * Math.PI / n, x = cx + Math.cos(a) * 118, y = cy + Math.sin(a) * 104, c = WARNA[i % 5];
-    const jml = h.poin.filter(p => p.bagian === b).length;
-    g += `<path d="M${cx} ${cy} Q${(cx + x) / 2 + 10} ${(cy + y) / 2 - 10} ${x} ${y}" stroke="#E3CDBA" stroke-width="3" fill="none" stroke-dasharray="1 7" stroke-linecap="round"/>`;
-    node += `<rect x="${x - 58}" y="${y - 24}" width="116" height="48" rx="16" fill="${PASTEL[c]}"/>${teks(x, y - (jml ? 5 : 0), b, '#4A3428', 13)}${jml ? `<text x="${x}" y="${y + 17}" text-anchor="middle" font-family="Nunito,sans-serif" font-size="11" font-weight="800" fill="${TEKS[c]}">${jml} poin</text>` : ''}`;
-  });
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Peta alur: ${esc(h.judul)} dengan bagian ${esc(bag.join(', '))}">${g}${node}<rect x="${cx - 74}" y="${cy - 28}" width="148" height="56" rx="20" fill="#E0704F"/>${teks(cx, cy, h.judul, '#fff', 14, 18)}</svg>`;
-}
 
 /* Gambar poster (PNG) untuk disimpan / dikirim */
 const muatGambar = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
@@ -793,7 +838,7 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
   blok.push({ h: tK, g: async y => {
     kotak(pad, y, W - pad * 2, tK, 56, '#F6CDB8');
     if (anjing) { const s = Math.min(440, (tK - 24) * anjing.width / anjing.height); x.drawImage(anjing, W - pad - s + 20, y + tK - s * anjing.height / anjing.width - 10, s, s * anjing.height / anjing.width); }
-    tulis(['RINGKASAN MEETING · ' + o.nama.toUpperCase()], pad + 44, y + 74, F(24, 900), '#8A3E22', 0);
+    tulis([`RINGKASAN ${namaJenis(m.jenis).toUpperCase()} · ${o.nama.toUpperCase()}`], pad + 44, y + 74, F(24, 900), '#8A3E22', 0);
     tulis(jdl, pad + 44, y + 160, F(60, 900), '#4A2A1C', 66);
     tulis(inti, pad + 44, y + 172 + jdl.length * 66, F(28, 700), '#6E4A38', 38);
   } });
@@ -818,22 +863,29 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
   if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 56; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, '#F6CDB8'); x.textAlign = 'center'; tulis(pt, W / 2, y + 58, F(30, 900), '#6E3420', 40); x.textAlign = 'left'; } }); }
   // seksi berisi daftar; kalau tidak muat, sisanya lanjut di halaman berikutnya
   const seksi = (judul, ikon, c, items, latar = '#FBF4EC') => blok.push({ judul, ikon, c, items, latar });
-  if (h.alur.length) seksi('Jalannya meeting', svg('jam', '#fff', HEX.blue), 'blue', h.alur.map(a => { const t = bungkus(a.judul, iw - 150, F(30, 900)), k = bungkus(a.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PASTEL.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis([a.waktu], X0, y + 26, F(26, 900), HEX.blue, 0); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }));
-  if (h.sepakat.length) seksi('Sudah disepakati', svg('star'), 'sage', h.sepakat.map(s => { const l = bungkus(s, iw - 70, F(28, 800)); return { h: l.length * 38 + 18, g: async y => { try { x.drawImage(await gbr(svg('ok', HEX.sage)), X0, y, 40, 40); } catch {} tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }));
   if (h.tugas.length) seksi('Tugas', svg('tugas', '#fff', HEX.butter), 'butter', h.tugas.map(t => { const l = bungkus(t.apa, iw - 70, F(28, 800)), k = [t.siapa, t.kapan].filter(Boolean).join(' · '); return { h: l.length * 38 + (k ? 34 : 0) + 26, g: async y => {
     if (t.selesai) { kotak(X0, y, 40, 40, 12, HEX.sage); try { x.drawImage(await gbr(svg('centang')), X0 + 8, y + 8, 24, 24); } catch {} } else kotak(X0, y, 40, 40, 12, '#EADBCB');
     tulis(l, X0 + 60, y + 30, F(28, 800), t.selesai ? '#9A8476' : '#4A3428', 38);
     if (t.selesai) l.forEach((s, n) => { x.fillRect(X0 + 60, y + 20 + n * 38, x.measureText(s).width, 3); });
     if (k) tulis([k], X0 + 60, y + 30 + l.length * 38, F(24, 700), '#7A6152', 0);
   } }; }));
-  if (h.tanya.length) seksi('Perlu ditanya', svg('tanya', '#fff', HEX.lilac), 'lilac', h.tanya.map(s => { const l = bungkus('• ' + s, iw - 20, F(28, 800)); return { h: l.length * 38 + 14, g: async y => tulis(l, X0, y + 30, F(28, 800), TEKS.lilac, 38) }; }), PASTEL.lilac);
-  if (h.kutipan.length) seksi('Kalimat penting', svg('kutip'), 'sage', h.kutipan.map(q => { const a = bungkus(`"${q.asli}"`, iw, F(30, 900)), b = bungkus(q.arti + (q.siapa ? ' — ' + q.siapa : ''), iw, F(26, 700)); return { h: a.length * 40 + b.length * 34 + 24, g: async y => { tulis(a, X0, y + 30, F(30, 900), '#2F4A3E', 40); tulis(b, X0, y + 30 + a.length * 40, F(26, 700), TEKS.sage, 34); } }; }), PASTEL.sage);
-  const pH = Math.round(iw * 300 / 340);
-  seksi('Peta alur', svg('star'), 'coral', [{ h: pH, g: async y => { try { x.drawImage(await gbr(petaSvg(h).replace('<svg ', `<svg width="${iw}" height="${pH}" `)), X0, y, iw, pH); } catch {} } }]);
+  const pl = (t, w, f) => bungkus(t, w, f);
+  for (const s of seksiDari(h)) {
+    const [c, ik] = GAYA[s.bentuk] || GAYA.daftar, it = s.isi.map((q, i) => {
+      if (s.bentuk === 'linimasa') { const t = pl(q.teks, iw - 150, F(30, 900)), k = pl(q.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PASTEL.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis(pl(q.label, 120, F(24, 900)), X0, y + 26, F(24, 900), HEX.blue, 28); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }
+      if (s.bentuk === 'centang') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: l.length * 38 + 18, g: async y => { try { x.drawImage(await gbr(svg('ok', HEX.sage)), X0, y, 40, 40); } catch {} tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
+      if (s.bentuk === 'angka' || s.bentuk === 'istilah') { const a = pl(q.label, iw, F(24, 900)), b = pl(q.teks, iw, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700)), lb = s.bentuk === 'angka' ? 42 : 36; return { h: a.length * 30 + b.length * lb + 26, g: async y => { tulis(a, X0, y + 24, F(24, 900), TEKS[c], 30); tulis(b, X0, y + 28 + a.length * 30, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700), '#4A3428', lb); } }; }
+      if (s.bentuk === 'langkah') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: Math.max(48, l.length * 38) + 16, g: async y => { x.fillStyle = HEX.coral; x.beginPath(); x.arc(X0 + 20, y + 20, 20, 0, 7); x.fill(); x.textAlign = 'center'; tulis([String(i + 1)], X0 + 20, y + 29, F(24, 900), '#fff', 0); x.textAlign = 'left'; tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
+      if (s.bentuk === 'kutipan' || s.bentuk === 'ayat') { const top = s.bentuk === 'ayat' ? pl(q.label + (q.ket ? ` (${q.ket})` : ''), iw, F(26, 900)) : [], a = pl(s.bentuk === 'ayat' ? q.teks : `"${q.teks}"`, iw, F(28, s.bentuk === 'ayat' ? 700 : 900)), b = s.bentuk === 'kutipan' ? pl(q.ket, iw, F(26, 700)) : []; return { h: top.length * 34 + a.length * 38 + b.length * 34 + 24, g: async y => { tulis(top, X0, y + 28, F(26, 900), TEKS[c], 34); tulis(a, X0, y + 30 + top.length * 34, F(28, s.bentuk === 'ayat' ? 700 : 900), '#2F4A3E', 38); tulis(b, X0, y + 30 + top.length * 34 + a.length * 38, F(26, 700), TEKS[c], 34); } }; }
+      const l = pl((s.bentuk === 'pesan' ? '' : '• ') + q.teks, iw - 20, F(28, 800)); return { h: l.length * 38 + 14, g: async y => tulis(l, X0, y + 30, F(28, 800), s.bentuk === 'daftar' ? TEKS.lilac : '#4A3428', 38) };
+    });
+    if (s.bentuk === 'pesan') continue; // draf pesan tidak ikut di gambar (pesan untuk dikirim terpisah)
+    seksi(s.judul, svg(ik, '#fff', HEX[c]), c, it, s.bentuk === 'daftar' ? PASTEL.lilac : s.bentuk === 'kutipan' ? PASTEL.sage : '#FBF4EC');
+  }
   // susun jadi beberapa kolom berdampingan dalam SATU gambar (tidak memanjang ke bawah)
   const tinggiSeksi = b => 154 + b.items.reduce((s, it) => s + it.h, 0);
   const T = blok.reduce((s, b) => s + (b.items ? tinggiSeksi(b) : b.h) + gap, 0);
-  const n = Math.min(4, Math.max(1, Math.round(Math.sqrt(T / (W * 1.25))))); // jumlah kolom supaya bentuknya mendekati 4:5
+  const n = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(T / (W * 1.25)) - 0.25))); // jumlah kolom supaya bentuknya mendekati 4:5
   const pack = batas => { // isi kolom satu per satu sampai batas tinggi
     const kolom = []; let isi, sisa;
     const kolBaru = () => { isi = []; kolom.push(isi); sisa = batas; };
@@ -935,7 +987,7 @@ R.atur = () => {
       if (!ok) return toast('Ini bukan file cadangan Jejak.');
       if (!confirm(`Pulihkan ${d.orang.length} orang dan ${d.meeting.length} meeting? Data yang sudah ada tetap disimpan.`)) return;
       const bersih = { orang: d.orang.map(o => ({ id: o.id, nama: potong(o.nama, 40), warna: WARNA.includes(o.warna) ? o.warna : 'coral', dibuat: +o.dibuat || Date.now() })),
-        meeting: d.meeting.map(m => ({ id: m.id, orangId: m.orangId, tanggal: +m.tanggal || Date.now(), durasi: +m.durasi || 0, topik: potong(m.topik, 60), hasil: (({ transkrip, ...r }) => r)(rapikanLama(m.hasil)), versi: 1 })) };
+        meeting: d.meeting.map(m => ({ id: m.id, orangId: m.orangId, tanggal: +m.tanggal || Date.now(), durasi: +m.durasi || 0, topik: potong(m.topik, 60), jenis: potong(m.jenis, 30) || 'meeting', hasil: (({ transkrip, ...r }) => r)(rapikanLama(m.hasil)), versi: 1 })) };
       try { await DB.putMany(bersih); } catch { return toast('Gagal memulihkan. Coba lagi.'); }
       await muatData(); perbaruiLencana(); toast(`Berhasil: ${bersih.meeting.length} meeting dipulihkan`);
     });
