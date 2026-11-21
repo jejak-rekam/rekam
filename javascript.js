@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.3.0',
+  VERSI: '1.3.1',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -259,30 +259,35 @@ async function calonModel() {
         .sort((a, b) => (/flash/.test(b) - /flash/.test(a)) || (/lite/.test(a) - /lite/.test(b)) || (v(b) - v(a)));
     } catch { daftarModel = []; }
   }
-  return [...new Set([S0.model, ...daftarModel, CONFIG.MODEL_CADANGAN])].filter(m => !PENUH.has(m)).slice(0, 8);
+  return [...new Set([S0.modelJalan, S0.model, ...daftarModel, CONFIG.MODEL_CADANGAN])].filter(m => m && !PENUH.has(m)).slice(0, 8);
 }
 async function mintaJSON(isi, maju) { // kirim ke AI, terima ringkasan berbentuk data
   let pikir = { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
   const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 32768, temperature: 0.3, ...(pikir ? { thinkingConfig: pikir } : {}) } });
   const tunggu = d => new Promise(s => setTimeout(s, d));
-  for (const m of await calonModel()) {
-    for (let coba = 0; coba < 2; coba++) {
+  const calon = await calonModel(), gagal = [];
+  for (let putaran = 0; putaran < 2; putaran++) for (const m of calon) { // putaran kedua: semua model dicoba lagi setelah jeda
+    if (PENUH.has(m)) continue;
+    if (putaran) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Semua model sibuk. Menunggu 30 detik lalu mencoba lagi.'); await tunggu(30000); }
+    for (let coba = 0; coba < 1 + !putaran; coba++) {
       try {
         const teks = await mintaRingkasan(m, body(), maju);
         let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
         if (!o) throw new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.');
+        S0.modelJalan = m; // model yang berhasil dicoba duluan untuk bagian berikutnya
         return rapikan(o);
       } catch (e) {
         galat = e;
         if (e.status === 400 && pikir && /think/i.test(e.detail || '')) { pikir = null; coba--; continue; } // model ini tidak mendukung pengaturan berpikir
         if (e.status === 429 || e.status === 404) { PENUH.add(m); setTahap('Kuota model penuh, pindah ke model lain…', null, `Otomatis, tidak perlu menekan apa-apa. (${m} dilewati)`); break; }
         semuaPenuh = false;
-        if (e.status >= 500) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Tidak perlu menekan apa-apa, tunggu sebentar.'); await tunggu(coba ? 15000 : 6000); continue; }
+        if (e.status >= 500) { gagal.push(m); setTahap('Server sibuk, mencoba lagi otomatis…', null, `Tidak perlu menekan apa-apa, tunggu sebentar. (${m})`); if (!coba && !putaran) await tunggu(8000); continue; } // sekali ulang, lalu pindah model
         throw e; // putus, terlalu lama, atau kunci salah: tampilkan tombol Coba lagi
       }
     }
   }
   if (galat?.status === 429 && semuaPenuh) { PENUH.clear(); throw Object.assign(new GagalAI('Kuota gratis semua model sedang penuh. Coba lagi beberapa menit lagi; kalau tetap penuh, biasanya pulih besok sekitar jam 3 sore. (kode 429)'), { status: 429 }); }
+  if (galat?.status >= 500) throw Object.assign(new GagalAI(`Server Google sedang sibuk untuk semua model (${[...new Set(gagal)].join(', ')}). Bagian yang sudah selesai tetap tersimpan. Tekan Coba lagi 5-10 menit lagi.`), { status: galat.status });
   throw galat || new GagalAI('Gagal memproses. Coba lagi.');
 }
 const maju = (lo, hi, label = '') => (n, blok) => { // bar kemajuan mengikuti jawaban yang benar-benar diterima
@@ -339,10 +344,10 @@ function rapikan(o) { // bersihkan & batasi isi dari AI sebelum disimpan
 }
 
 /* ========== POTONG REKAMAN PANJANG (tanpa alat tambahan) ========== */
-const POTONG_DETIK = 30 * 60;
+const POTONG_DETIK = 15 * 60; // potongan pendek = lebih jarang ditolak server sibuk
 const bacaByte = async (blob, a, b) => new Uint8Array(await blob.slice(a, b).arrayBuffer());
 async function potongRekaman(b) { // b: { blob, mime, namaFile, durasi }
-  if (!b.durasi || b.durasi <= POTONG_DETIK + 180) return [b];
+  if (!b.durasi || b.durasi <= POTONG_DETIK + 120) return [b];
   try {
     if (b.mime === 'audio/mp4') return await potongM4a(b);
     if (b.mime === 'audio/mp3') return potongMp3(b);
