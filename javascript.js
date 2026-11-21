@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.3.1',
+  VERSI: '1.4.0',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -52,6 +52,13 @@ const ILL = {
   target: '<circle cx="30" cy="30" r="22" fill="#fff"/><circle cx="30" cy="30" r="15" fill="#F7AE92"/><circle cx="30" cy="30" r="8" fill="#fff"/><circle cx="30" cy="30" r="4" fill="#E0704F"/><path d="M31 29L60 6" stroke="#4A3428" stroke-width="3" stroke-linecap="round"/><path d="M56 4l8-2-2 8z" fill="#5E8C7A"/>',
   chat: '<rect x="4" y="6" width="40" height="26" rx="10" fill="#fff"/><path d="M12 30l-2 10 10-8z" fill="#fff"/><rect x="26" y="22" width="40" height="26" rx="10" fill="#6F8FBC"/><path d="M58 46l2 8-10-6z" fill="#6F8FBC"/><circle cx="16" cy="19" r="3" fill="#E0704F"/><circle cx="25" cy="19" r="3" fill="#E0A532"/><circle cx="34" cy="19" r="3" fill="#5E8C7A"/>',
   rumah: '<path d="M8 26L34 6l26 20v24H8z" fill="#fff"/><path d="M4 28L34 4l30 24" fill="none" stroke="#E0704F" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="28" y="34" width="12" height="16" rx="2" fill="#E0A532"/><rect x="14" y="30" width="9" height="9" rx="2" fill="#AFC6E6"/>'
+};
+const ILK_SVG = {
+  matahari: '<circle cx="35" cy="28" r="13" fill="#F3CF6E"/><path d="M35 4v8M35 44v8M11 28h8M51 28h8M18 11l6 6M46 39l6 6M52 11l-6 6M24 39l-6 6" stroke="#E0A532" stroke-width="3.5" stroke-linecap="round"/>',
+  hati: '<path d="M35 50C14 36 10 26 14 18c4-8 15-9 21 0 6-9 17-8 21 0 4 8 0 18-21 32z" fill="#AFC6E6"/><path d="M24 20c-3 1-5 4-5 7" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>',
+  buku: '<path d="M8 14c9-4 18-4 27 2v34c-9-6-18-6-27-2z" fill="#fff"/><path d="M62 14c-9-4-18-4-27 2v34c9-6 18-6 27-2z" fill="#F3E3C4"/><path d="M35 16v34" stroke="#B08560" stroke-width="3"/><rect x="45" y="22" width="4" height="12" rx="1" fill="#C9A24A"/><rect x="41" y="26" width="12" height="4" rx="1" fill="#C9A24A"/>',
+  merpati: '<path d="M10 34c10-2 18-10 22-20 4 9 6 16 4 22 8-6 16-6 24-4-6 10-18 16-32 14-7-1-13-6-18-12z" fill="#fff"/><path d="M36 36c-2 6-8 10-14 10" stroke="#AFC6E6" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="18" cy="32" r="2" fill="#4A6E99"/>',
+  cahaya: '<path d="M35 6l7 16 17 2-13 11 4 17-15-9-15 9 4-17-13-11 17-2z" fill="#F6E6C4" stroke="#E0A532" stroke-width="3" stroke-linejoin="round"/>'
 };
 const ill = n => `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${ILL[n] || ILL.ide}</svg>`;
 
@@ -166,14 +173,14 @@ const hapusFileGemini = name => name && fetch(CONFIG.API + '/v1beta/' + name, { 
 
 const A = t => ({ type: 'ARRAY', items: t }), STR = { type: 'STRING' }, O = (p, req) => ({ type: 'OBJECT', properties: p, required: req || Object.keys(p) });
 /* Template per jenis rekaman: AI wajib mengisi bagian-bagian ini dengan urutan dan judul yang sama */
-const BENTUK = ['daftar', 'centang', 'langkah', 'angka', 'linimasa', 'kutipan', 'ayat', 'istilah', 'pesan'];
+const BENTUK = ['belum', 'daftar', 'centang', 'langkah', 'angka', 'linimasa', 'kutipan', 'ayat', 'istilah', 'pesan'];
 const TEMPLATE = {
   meeting: { nama: 'Meeting', orang: 'Meeting dengan siapa?', contoh: 'Bu Rina', tugas: true, seksi: [
     ['Sudah disepakati', 'centang', 'hal yang sudah disepakati bersama'],
     ['Angka & tanggal penting', 'angka', 'harga, jumlah, persen, tanggal penting; label = nama angkanya (maks 4 kata), teks = nilainya singkat'],
     ['Linimasa', 'linimasa', 'jadwal dan tenggat berurutan; label = hari/tanggal singkat, teks = kegiatan, ket = siapa'],
     ['Jalannya meeting', 'linimasa', 'urutan obrolan; label = menit dari awal (m:ss), teks = topik, ket = keterangan singkat'],
-    ['Pertanyaan untuk meeting berikutnya', 'daftar', 'hal yang belum jelas atau perlu ditanyakan/disiapkan di pertemuan berikutnya'],
+    ['Masih belum jelas', 'belum', 'hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka/klaim tanpa dasar, atau yang saling bertentangan. Tulis langsung sebagai kalimat pendek (bukan format celah-tanya). Kosongkan kalau memang tidak ada'],
     ['Kalimat penting', 'kutipan', 'maksimal 3; teks = kalimat asli seperti diucapkan (boleh bahasa Jawa), ket = artinya dalam bahasa Indonesia dan siapa yang bilang'],
     ['Draf pesan tindak lanjut', 'pesan', 'SATU pesan WhatsApp sopan dari pemilik HP kepada orang itu: terima kasih, ringkasan kesepakatan, tugas dan tanggalnya; tulis di isi[0].teks']] },
   khotbah: { nama: 'Khotbah', orang: 'Pengkhotbah / gereja', contoh: 'Pdt. Andreas · GKJ', tugas: false, seksi: [
@@ -184,7 +191,7 @@ const TEMPLATE = {
   kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: true, seksi: [
     ['Istilah penting', 'istilah', 'label = istilah/kosakata, teks = artinya singkat'],
     ['Langkah praktik', 'langkah', 'langkah-langkah yang diajarkan, berurutan'],
-    ['Belum terjawab', 'daftar', 'pertanyaan yang belum terjawab atau perlu dipelajari lagi']] }
+    ['Masih belum jelas', 'belum', 'hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka/klaim tanpa dasar, atau yang saling bertentangan. Tulis langsung sebagai kalimat pendek (bukan format celah-tanya). Kosongkan kalau memang tidak ada']] }
 };
 const templateDari = jenis => TEMPLATE[jenis] || null; // jenis lain (diisi sendiri): AI yang menyusun bagian
 const namaJenis = jenis => TEMPLATE[jenis]?.nama || jenis || 'Meeting';
@@ -198,7 +205,7 @@ const SKEMA = O({
 function aturanSeksi(jenis) {
   const t = templateDari(jenis);
   if (t) return `- seksi: WAJIB berisi bagian-bagian ini, dengan judul dan bentuk persis seperti di bawah dan urutan yang sama. Kalau tidak ada isinya, isi dengan daftar kosong:\n${t.seksi.map(([a, b, c], i) => `  ${i + 1}. judul "${a}", bentuk "${b}": ${c}`).join('\n')}`;
-  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
+  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Bagian terakhir WAJIB judul "Masih belum jelas" bentuk "belum": hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka tanpa dasar, atau saling bertentangan, ditulis langsung sebagai kalimat pendek (kosongkan kalau tidak ada). Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
 }
 function buatPrompt(j, sumber = 'rekaman', n = 1) {
   const jenis = j.jenis || 'meeting', t = templateDari(jenis);
@@ -209,7 +216,7 @@ Info: ${t ? t.orang.replace('?', '') : 'dengan'} "${j.nama}". Topik: "${j.topik 
 
 Aturan:
 - Jangan mengarang. Tulis hanya yang benar-benar ada di ${sumber}. Bagian yang tidak jelas tulis "(tidak jelas)".
-- judul: topik utama, maksimal 6 kata. inti: 1 kalimat (maksimal 20 kata).
+${sumber !== 'rekaman' ? '- Ini dokumen: poin harus jelas dan lengkap. Semua angka, tanggal, nama, harga, dan syarat penting wajib ikut ditulis, jangan diringkas sampai hilang.\n' : ''}- judul: topik utama, maksimal 6 kata. inti: 1 kalimat (maksimal 20 kata).
 - bagian: kelompokkan isi menurut topik (1-6 topik, 1-2 kata).
 - poin: poin paling penting. Isi pendek 3-4 poin, sedang 4-6, panjang 6-10. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian. Pilih ikon yang cocok.
 - tugas: ${t && !t.tugas ? 'isi hanya kalau ada tugas yang jelas disebut (siapa mengerjakan apa); kalau tidak ada, daftar kosong.' : 'siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan. Kalau waktunya tidak disebut, kapan = "".'}
@@ -321,13 +328,13 @@ ${aturanSeksi(j.jenis || 'meeting')}
 DATA:
 ${JSON.stringify(data)}` }], mj);
 }
-const GAYA = { centang: ['sage', 'star'], angka: ['coral', 'star'], linimasa: ['blue', 'jam'], daftar: ['lilac', 'tanya'], kutipan: ['sage', 'kutip'], ayat: ['butter', 'kutip'], istilah: ['blue', 'star'], langkah: ['coral', 'tugas'], pesan: ['sage', 'kirim'] };
+const GAYA = { belum: ['coral', 'tanya'], centang: ['sage', 'star'], angka: ['coral', 'star'], linimasa: ['blue', 'jam'], daftar: ['lilac', 'tanya'], kutipan: ['sage', 'kutip'], ayat: ['butter', 'kutip'], istilah: ['blue', 'star'], langkah: ['coral', 'tugas'], pesan: ['sage', 'kirim'] };
 function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
   if (Array.isArray(h.seksi)) return h.seksi;
   return [
     ['Jalannya meeting', 'linimasa', (h.alur || []).map(a => ({ label: a.waktu, teks: a.judul, ket: a.ket }))],
     ['Sudah disepakati', 'centang', (h.sepakat || []).map(teks => ({ teks }))],
-    ['Perlu ditanya', 'daftar', (h.tanya || []).map(teks => ({ teks }))],
+    ['Masih belum jelas', 'belum', (h.tanya || []).map(teks => ({ teks }))],
     ['Kalimat penting', 'kutipan', (h.kutipan || []).map(k => ({ teks: k.asli, ket: [k.arti, k.siapa].filter(Boolean).join(' — ') }))]
   ].map(([judul, bentuk, isi]) => ({ judul, bentuk, isi })).filter(s => s.isi.length);
 }
@@ -485,7 +492,7 @@ R.orangDetail = id => {
   const nKep = ms.reduce((n, m) => n + seksiDari(m.hasil).filter(s => s.bentuk === 'centang').reduce((a, s) => a + s.isi.length, 0), 0);
   const grup = {}; ms.forEach(m => { const k = new Date(m.tanggal).toDateString(); (grup[k] = grup[k] || []).push(m); });
   const dobel = Object.values(grup).filter(g => g.length > 1);
-  const ingat = [...ms.flatMap(m => m.hasil.tugas.filter(t => !t.selesai).map(t => t.apa)), ...(ms[0] ? seksiDari(ms[0].hasil).filter(s => s.bentuk === 'daftar' && /tanya|meeting berikut/i.test(s.judul)).flatMap(s => s.isi.map(x => x.teks)) : [])].slice(0, 4);
+  const ingat = [...ms.flatMap(m => m.hasil.tugas.filter(t => !t.selesai).map(t => t.apa)), ...(ms[0] ? seksiDari(ms[0].hasil).filter(s => s.bentuk === 'belum').flatMap(s => s.isi.map(x => x.teks)) : [])].slice(0, 4);
   $('#app').innerHTML = atas('') + `
   <section class="kotak clay" style="background:var(--peach)"><div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><span class="i3 av c-${w}" style="width:60px;height:60px;border-radius:20px;font-size:21px"><span>${esc(inisial(o.nama))}</span></span><div><h2 style="font-size:23px;font-weight:900">${esc(o.nama)}</h2><small style="font-size:13px;font-weight:700;color:#6E4A38">Sejak ${esc(tglPendek(o.dibuat))}</small></div></div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${[['meeting', ms.length], ['tugas', tugasTerbuka(ms)], ['keputusan', nKep]].map(([l, n]) => `<div class="clay" style="background:var(--card);border-radius:18px;padding:10px 12px"><b style="font-size:22px;font-weight:900;display:block">${n}</b><small style="font-size:12px;font-weight:700;color:var(--sub)">${l}</small></div>`).join('')}</div></section>
@@ -774,23 +781,25 @@ function seksiHtml(s, n) { // satu bagian di halaman hasil, tampilannya mengikut
     angka: () => `<div class="sx-angka clay p-${WARNA[i % 5]}"><small>${e(x.label)}</small><b>${e(x.teks)}</b></div>`,
     linimasa: () => `<div class="alur"><span class="w">${e(x.label)}</span><div class="t"><b>${e(x.teks)}</b><small>${e(x.ket)}</small></div></div>`,
     daftar: () => `<p class="sx-poin">${e(x.teks)}</p>`,
+    belum: () => `<p class="sx-poin">${e(x.teks)}</p>`,
     langkah: () => `<div class="sx-langkah"><span class="i3 c-coral"><span>${i + 1}</span></span><p>${e(x.teks)}</p></div>`,
     kutipan: () => `<blockquote class="sx-kutip">"${e(x.teks)}"${x.ket ? `<small>${e(x.ket)}</small>` : ''}</blockquote>`,
     ayat: () => `<div class="sx-ayat"><b>${e(x.label)}</b>${x.ket ? `<span class="pill ${/dibaca/i.test(x.ket) ? 'ijo' : 'kuning'}">${e(x.ket)}</span>` : ''}<p>${e(x.teks)}</p></div>`,
     istilah: () => `<div class="sx-istilah"><b>${e(x.label)}</b><span>${e(x.teks)}</span></div>`,
     pesan: () => `<div class="sx-pesan">${e(x.teks)}</div><button class="btn clay" data-salin="${e(x.teks)}" style="width:100%;margin-top:10px">${svg('kirim', '#4A3428')}<span>Salin pesan</span></button>`
   }[s.bentuk] || (() => ''))()).join('');
-  return `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-${c}">${svg(ik, '#fff', HEX[c])}</span><h3>${e(s.judul)}</h3></div><div class="${s.bentuk === 'angka' ? 'sx-grid' : ''}">${isi}</div></section>`;
+  return `<section class="kotak clay${s.bentuk === 'belum' ? ' sx-belum' : ''}"><div class="sek-h"><span class="i3 ic c-${c}">${svg(ik, '#fff', HEX[c])}</span><h3>${e(s.judul)}</h3></div><div class="${s.bentuk === 'angka' ? 'sx-grid' : ''}">${isi}</div></section>`;
 }
 R.hasil = id => {
   const m = S0.meeting.find(x => x.id === decodeURIComponent(id)); if (!m) return buka('#/');
   const h = m.hasil, o = orangById(m.orangId) || { nama: '?' };
   const iBag = b => Math.max(0, h.bagian.indexOf(b));
-  const kartu = (p, i) => { const c = WARNA[i % 5]; return `<article class="k1 clay p-${c}" data-bag="${iBag(p.bagian)}"><span class="tag t-${c}">${esc(p.bagian || h.bagian[0])}</span><div class="hd"><span class="i3 n c-${c}"><span>${i + 1}</span></span><h3>${esc(p.judul)}</h3></div><p class="t-${c}">${esc(p.isi)}</p>${ill(p.ikon)}</article>`; };
+  const kh = m.jenis === 'khotbah', ILK = ['matahari', 'hati', 'buku', 'merpati', 'cahaya'];
+  const kartu = (p, i) => { const c = WARNA[i % 5]; return `<article class="k1 clay p-${c}" data-bag="${iBag(p.bagian)}"><span class="tag t-${c}">${esc(p.bagian || h.bagian[0])}</span><div class="hd"><span class="i3 n c-${c}"><span>${i + 1}</span></span><h3>${esc(p.judul)}</h3></div><p class="t-${c}">${esc(p.isi)}</p>${kh ? `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${ILK_SVG[ILK[i % 5]]}</svg>` : ill(p.ikon)}</article>`; };
   $('#app').innerHTML = `
   <div class="top"><button class="btn-ikon clay" data-back aria-label="Kembali">${svg('back', '#4A3428')}</button><span class="pill clay" style="background:var(--card);color:var(--ink);font-weight:800">${esc(o.nama)} · ${esc(tglPendek(m.tanggal))}${m.durasi ? ' · ' + esc(durasiTeks(m.durasi)) : ''}</span></div>
-  <section class="poster clay">
-    <div class="kepala"><img src="./ippo.webp" alt=""><div class="isi"><small class="k">RINGKASAN ${esc(namaJenis(m.jenis).toUpperCase())}</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
+  <section class="poster clay${m.jenis === 'khotbah' ? ' khotbah' : ''}">
+    <div class="kepala"><img src="./${m.jenis === 'khotbah' ? 'ippo-alkitab' : 'ippo'}.webp" alt=""><div class="isi"><small class="k">${m.jenis === 'khotbah' ? 'CATATAN KHOTBAH' : 'RINGKASAN ' + esc(namaJenis(m.jenis).toUpperCase())}</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
     ${h.bagian.length > 1 ? `<div class="filter" role="group" aria-label="Saring per bagian"><button class="chip on i3 c-sage" data-f="-1"><span>Semua</span></button>${h.bagian.map((b, i) => `<button class="chip clay" data-f="${i}">${i + 1} · ${esc(b)}</button>`).join('')}</div>` : ''}
     <div class="kartu">${h.poin.map(kartu).join('') || '<p class="kosong">Tidak ada poin penting.</p>'}</div>
     ${h.penutup ? `<div class="pita clay">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
@@ -827,26 +836,37 @@ R.hasil = id => {
 /* Gambar poster (PNG) untuk disimpan / dikirim */
 const muatGambar = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
 async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun beberapa kolom berdampingan supaya tidak memanjang
+  const kh = m.jenis === 'khotbah'; // khotbah: warna teduh, Ippo berdoa, ayat utama besar di atas
+  const PA = kh ? { coral: '#F3E9DD', butter: '#FBF1D9', sage: '#E8EFE6', blue: '#E3ECF6', lilac: '#E3ECF6' } : PASTEL;
+  const TK = kh ? { coral: '#8A6248', butter: '#9A7420', sage: '#4E7560', blue: '#4A6E99', lilac: '#4A6E99' } : TEKS;
+  const HX = kh ? { coral: '#B08560', butter: '#C9A24A', sage: '#6E9682', blue: '#6F8FBC', lilac: '#6F8FBC' } : HEX;
+  const ILK = ['matahari', 'hati', 'buku', 'merpati', 'cahaya'];
   const h = m.hasil, W = 1080, pad = 48, gap = 22, kw = (W - pad * 2 - gap) / 2, iw = W - pad * 2 - 80, X0 = pad + 40;
   await document.fonts?.load?.('900 40px Nunito').catch(() => {});
   const ukur = document.createElement('canvas').getContext('2d');
   const F = (s, w = 800) => `${w} ${s}px Nunito, system-ui, sans-serif`;
   const bungkus = (t, maks, font) => { ukur.font = font; const out = []; let l = ''; String(t || '').split(/\s+/).forEach(w => { const c = l ? l + ' ' + w : w; if (ukur.measureText(c).width > maks && l) { out.push(l); l = w; } else l = c; }); if (l) out.push(l); return out; };
   const gbr = s => muatGambar('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ' + (/^<svg[^>]* width=/.test(s) ? '' : 'width="96" height="96" '))));
-  const anjing = await muatGambar('./ippo.webp').catch(() => null);
+  const anjing = await muatGambar(kh ? './ippo-doa.webp' : './ippo.webp').catch(() => null);
   let x; // kanvas halaman yang sedang digambar
   const kotak = (X, Y, w, hh, r, c) => { x.fillStyle = c; x.beginPath(); x.roundRect(X, Y, w, hh, r); x.fill(); };
   const tulis = (baris, X, Y, font, warna, jarak) => { x.font = font; x.fillStyle = warna; baris.forEach((l, i) => x.fillText(l, X, Y + i * jarak)); };
-  const blok = [];
+  const blok = [], KEP = kh ? '#F6E6C4' : '#F6CDB8';
   // kepala (judul + inti + anjing)
   const jdl = bungkus(h.judul, 470, F(60, 900)), inti = bungkus(h.inti, 470, F(28, 700)), tK = Math.max(380, 150 + jdl.length * 66 + inti.length * 38 + 30);
   blok.push({ h: tK, g: async y => {
-    kotak(pad, y, W - pad * 2, tK, 56, '#F6CDB8');
+    kotak(pad, y, W - pad * 2, tK, 56, KEP);
     if (anjing) { const s = Math.min(440, (tK - 24) * anjing.width / anjing.height); x.drawImage(anjing, W - pad - s + 20, y + tK - s * anjing.height / anjing.width - 10, s, s * anjing.height / anjing.width); }
-    tulis([`RINGKASAN ${namaJenis(m.jenis).toUpperCase()} · ${o.nama.toUpperCase()}`], pad + 44, y + 74, F(24, 900), '#8A3E22', 0);
-    tulis(jdl, pad + 44, y + 160, F(60, 900), '#4A2A1C', 66);
-    tulis(inti, pad + 44, y + 172 + jdl.length * 66, F(28, 700), '#6E4A38', 38);
+    tulis([`${kh ? 'CATATAN KHOTBAH' : 'RINGKASAN ' + namaJenis(m.jenis).toUpperCase()} · ${o.nama.toUpperCase()}`], pad + 44, y + 74, F(24, 900), kh ? '#8A6A1E' : '#8A3E22', 0);
+    tulis(jdl, pad + 44, y + 160, F(60, 900), kh ? '#4A3A2A' : '#4A2A1C', 66);
+    tulis(inti, pad + 44, y + 172 + jdl.length * 66, F(28, 700), kh ? '#6E5530' : '#6E4A38', 38);
   } });
+  let daftarSeksi = seksiDari(h);
+  if (kh) { const sa = daftarSeksi.find(s => s.bentuk === 'ayat' && s.isi.length); if (sa) {
+    const u = sa.isi.find(x => /dibaca/i.test(x.ket)) || sa.isi[0], ut = bungkus(`"${u.teks}"`, W - pad * 2 - 100, F(36, 900)), hh = ut.length * 46 + 110;
+    blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, 40, '#E3ECF6'); x.textAlign = 'center'; tulis(ut, W / 2, y + 66, F(36, 900), '#2F4C70', 46); tulis([u.label + (u.ket ? ' · ' + u.ket : '')], W / 2, y + 66 + ut.length * 46 + 8, F(26, 800), '#4A6E99', 0); x.textAlign = 'left'; } });
+    daftarSeksi = daftarSeksi.map(s => s === sa ? { ...s, judul: 'Ayat lainnya', isi: s.isi.filter(x => x !== u) } : s).filter(s => s.isi.length);
+  } }
   // kartu poin, satu baris (2 kartu) = satu blok supaya bisa pindah halaman
   const isiK = h.poin.map(p => ({ t: bungkus(p.judul, kw - 110, F(34, 900)), d: bungkus(p.isi, kw - 48, F(28, 700)) }));
   const tinggi = isiK.map(k => 96 + k.t.length * 40 + k.d.length * 36 + 124);
@@ -855,37 +875,37 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
     blok.push({ h: hh, g: async y => {
       for (let i = r; i < Math.min(r + 2, h.poin.length); i++) {
         const p = h.poin[i], c = WARNA[i % 5], X = pad + (i % 2) * (kw + gap), k = isiK[i];
-        kotak(X, y, kw, hh, 40, PASTEL[c]);
-        tulis([String(p.bagian || '').toUpperCase()], X + 28, y + 50, F(20, 900), TEKS[c], 0);
-        x.fillStyle = HEX[c]; x.beginPath(); x.arc(X + 58, y + 98, 30, 0, 7); x.fill();
+        kotak(X, y, kw, hh, 40, PA[c]);
+        tulis([String(p.bagian || '').toUpperCase()], X + 28, y + 50, F(20, 900), TK[c], 0);
+        x.fillStyle = HX[c]; x.beginPath(); x.arc(X + 58, y + 98, 30, 0, 7); x.fill();
         x.textAlign = 'center'; tulis([String(i + 1)], X + 58, y + 110, F(32, 900), '#fff', 0); x.textAlign = 'left';
         tulis(k.t, X + 104, y + 120, F(34, 900), '#4A3428', 40);
-        tulis(k.d, X + 28, y + 132 + k.t.length * 40, F(28, 700), TEKS[c], 36);
-        try { x.drawImage(await gbr(`<svg viewBox="0 0 70 56" width="140" height="112">${ILL[p.ikon] || ILL.ide}</svg>`), X + kw - 160, y + hh - 124, 140, 112); } catch {}
+        tulis(k.d, X + 28, y + 132 + k.t.length * 40, F(28, 700), TK[c], 36);
+        try { x.drawImage(await gbr(`<svg viewBox="0 0 70 56" width="140" height="112">${kh ? ILK_SVG[ILK[i % 5]] : ILL[p.ikon] || ILL.ide}</svg>`), X + kw - 160, y + hh - 124, 140, 112); } catch {}
       }
     } });
   }
-  if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 56; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, '#F6CDB8'); x.textAlign = 'center'; tulis(pt, W / 2, y + 58, F(30, 900), '#6E3420', 40); x.textAlign = 'left'; } }); }
+  if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 56; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, KEP); x.textAlign = 'center'; tulis(pt, W / 2, y + 58, F(30, 900), kh ? '#6E5530' : '#6E3420', 40); x.textAlign = 'left'; } }); }
   // seksi berisi daftar; kalau tidak muat, sisanya lanjut di halaman berikutnya
   const seksi = (judul, ikon, c, items, latar = '#FBF4EC') => blok.push({ judul, ikon, c, items, latar });
-  if (h.tugas.length) seksi('Tugas', svg('tugas', '#fff', HEX.butter), 'butter', h.tugas.map(t => { const l = bungkus(t.apa, iw - 70, F(28, 800)), k = [t.siapa, t.kapan].filter(Boolean).join(' · '); return { h: l.length * 38 + (k ? 34 : 0) + 26, g: async y => {
-    if (t.selesai) { kotak(X0, y, 40, 40, 12, HEX.sage); try { x.drawImage(await gbr(svg('centang')), X0 + 8, y + 8, 24, 24); } catch {} } else kotak(X0, y, 40, 40, 12, '#EADBCB');
+  if (h.tugas.length) seksi('Tugas', svg('tugas', '#fff', HX.butter), 'butter', h.tugas.map(t => { const l = bungkus(t.apa, iw - 70, F(28, 800)), k = [t.siapa, t.kapan].filter(Boolean).join(' · '); return { h: l.length * 38 + (k ? 34 : 0) + 26, g: async y => {
+    if (t.selesai) { kotak(X0, y, 40, 40, 12, HX.sage); try { x.drawImage(await gbr(svg('centang')), X0 + 8, y + 8, 24, 24); } catch {} } else kotak(X0, y, 40, 40, 12, '#EADBCB');
     tulis(l, X0 + 60, y + 30, F(28, 800), t.selesai ? '#9A8476' : '#4A3428', 38);
     if (t.selesai) l.forEach((s, n) => { x.fillRect(X0 + 60, y + 20 + n * 38, x.measureText(s).width, 3); });
     if (k) tulis([k], X0 + 60, y + 30 + l.length * 38, F(24, 700), '#7A6152', 0);
   } }; }));
   const pl = (t, w, f) => bungkus(t, w, f);
-  for (const s of seksiDari(h)) {
+  for (const s of daftarSeksi) {
     const [c, ik] = GAYA[s.bentuk] || GAYA.daftar, it = s.isi.map((q, i) => {
-      if (s.bentuk === 'linimasa') { const t = pl(q.teks, iw - 150, F(30, 900)), k = pl(q.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PASTEL.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis(pl(q.label, 120, F(24, 900)), X0, y + 26, F(24, 900), HEX.blue, 28); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }
-      if (s.bentuk === 'centang') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: l.length * 38 + 18, g: async y => { try { x.drawImage(await gbr(svg('ok', HEX.sage)), X0, y, 40, 40); } catch {} tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
-      if (s.bentuk === 'angka' || s.bentuk === 'istilah') { const a = pl(q.label, iw, F(24, 900)), b = pl(q.teks, iw, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700)), lb = s.bentuk === 'angka' ? 42 : 36; return { h: a.length * 30 + b.length * lb + 26, g: async y => { tulis(a, X0, y + 24, F(24, 900), TEKS[c], 30); tulis(b, X0, y + 28 + a.length * 30, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700), '#4A3428', lb); } }; }
-      if (s.bentuk === 'langkah') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: Math.max(48, l.length * 38) + 16, g: async y => { x.fillStyle = HEX.coral; x.beginPath(); x.arc(X0 + 20, y + 20, 20, 0, 7); x.fill(); x.textAlign = 'center'; tulis([String(i + 1)], X0 + 20, y + 29, F(24, 900), '#fff', 0); x.textAlign = 'left'; tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
-      if (s.bentuk === 'kutipan' || s.bentuk === 'ayat') { const top = s.bentuk === 'ayat' ? pl(q.label + (q.ket ? ` (${q.ket})` : ''), iw, F(26, 900)) : [], a = pl(s.bentuk === 'ayat' ? q.teks : `"${q.teks}"`, iw, F(28, s.bentuk === 'ayat' ? 700 : 900)), b = s.bentuk === 'kutipan' ? pl(q.ket, iw, F(26, 700)) : []; return { h: top.length * 34 + a.length * 38 + b.length * 34 + 24, g: async y => { tulis(top, X0, y + 28, F(26, 900), TEKS[c], 34); tulis(a, X0, y + 30 + top.length * 34, F(28, s.bentuk === 'ayat' ? 700 : 900), '#2F4A3E', 38); tulis(b, X0, y + 30 + top.length * 34 + a.length * 38, F(26, 700), TEKS[c], 34); } }; }
-      const l = pl((s.bentuk === 'pesan' ? '' : '• ') + q.teks, iw - 20, F(28, 800)); return { h: l.length * 38 + 14, g: async y => tulis(l, X0, y + 30, F(28, 800), s.bentuk === 'daftar' ? TEKS.lilac : '#4A3428', 38) };
+      if (s.bentuk === 'linimasa') { const t = pl(q.teks, iw - 150, F(30, 900)), k = pl(q.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PA.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis(pl(q.label, 120, F(24, 900)), X0, y + 26, F(24, 900), HX.blue, 28); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }
+      if (s.bentuk === 'centang') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: l.length * 38 + 18, g: async y => { try { x.drawImage(await gbr(svg('ok', HX.sage)), X0, y, 40, 40); } catch {} tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
+      if (s.bentuk === 'angka' || s.bentuk === 'istilah') { const a = pl(q.label, iw, F(24, 900)), b = pl(q.teks, iw, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700)), lb = s.bentuk === 'angka' ? 42 : 36; return { h: a.length * 30 + b.length * lb + 26, g: async y => { tulis(a, X0, y + 24, F(24, 900), TK[c], 30); tulis(b, X0, y + 28 + a.length * 30, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700), '#4A3428', lb); } }; }
+      if (s.bentuk === 'langkah') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: Math.max(48, l.length * 38) + 16, g: async y => { x.fillStyle = HX.coral; x.beginPath(); x.arc(X0 + 20, y + 20, 20, 0, 7); x.fill(); x.textAlign = 'center'; tulis([String(i + 1)], X0 + 20, y + 29, F(24, 900), '#fff', 0); x.textAlign = 'left'; tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
+      if (s.bentuk === 'kutipan' || s.bentuk === 'ayat') { const top = s.bentuk === 'ayat' ? pl(q.label + (q.ket ? ` (${q.ket})` : ''), iw, F(26, 900)) : [], a = pl(s.bentuk === 'ayat' ? q.teks : `"${q.teks}"`, iw, F(28, s.bentuk === 'ayat' ? 700 : 900)), b = s.bentuk === 'kutipan' ? pl(q.ket, iw, F(26, 700)) : []; return { h: top.length * 34 + a.length * 38 + b.length * 34 + 24, g: async y => { tulis(top, X0, y + 28, F(26, 900), TK[c], 34); tulis(a, X0, y + 30 + top.length * 34, F(28, s.bentuk === 'ayat' ? 700 : 900), '#2F4A3E', 38); tulis(b, X0, y + 30 + top.length * 34 + a.length * 38, F(26, 700), TK[c], 34); } }; }
+      const l = pl((s.bentuk === 'pesan' ? '' : '• ') + q.teks, iw - 20, F(28, 800)); return { h: l.length * 38 + 14, g: async y => tulis(l, X0, y + 30, F(28, 800), s.bentuk === 'daftar' ? TK.lilac : s.bentuk === 'belum' ? TK.coral : '#4A3428', 38) };
     });
     if (s.bentuk === 'pesan') continue; // draf pesan tidak ikut di gambar (pesan untuk dikirim terpisah)
-    seksi(s.judul, svg(ik, '#fff', HEX[c]), c, it, s.bentuk === 'daftar' ? PASTEL.lilac : s.bentuk === 'kutipan' ? PASTEL.sage : '#FBF4EC');
+    seksi(s.judul, svg(ik, '#fff', HX[c]), c, it, s.bentuk === 'daftar' ? PA.lilac : s.bentuk === 'belum' ? PA.coral : s.bentuk === 'kutipan' ? PA.sage : '#FBF4EC');
   }
   // susun jadi beberapa kolom berdampingan dalam SATU gambar (tidak memanjang ke bawah)
   const tinggiSeksi = b => 154 + b.items.reduce((s, it) => s + it.h, 0);
@@ -904,7 +924,7 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
         if (z === i) tot += b.items[z++].h;
         const potong = b.items.slice(i, z), jd = b.judul + (lanjut ? ' (lanjutan)' : ''), hh = tot;
         isi.push({ h: hh, g: async y => {
-          kotak(pad, y, W - pad * 2, hh, 44, b.latar); kotak(pad + 36, y + 36, 64, 64, 20, HEX[b.c]); kotak(pad + 44, y + 40, 48, 20, 10, 'rgba(255,255,255,.35)');
+          kotak(pad, y, W - pad * 2, hh, 44, b.latar); kotak(pad + 36, y + 36, 64, 64, 20, HX[b.c]); kotak(pad + 44, y + 40, 48, 20, 10, 'rgba(255,255,255,.35)');
           try { x.drawImage(await gbr(b.ikon), pad + 50, y + 50, 36, 36); } catch {}
           tulis([jd], pad + 120, y + 80, F(34, 900), '#4A3428', 0);
           let yy = y + 124; for (const it of potong) { await it.g(yy); yy += it.h; }
@@ -919,7 +939,7 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
   while (kolom.length > n) { batas += 30; kolom = pack(batas); }
   const tinggiKol = kolom.map(k => k.reduce((s, b) => s + b.h + gap, 0) - gap);
   const cv = document.createElement('canvas'); cv.width = W * kolom.length - pad * (kolom.length - 1); cv.height = pad + Math.max(...tinggiKol) + 90; x = cv.getContext('2d');
-  x.fillStyle = '#F5EADF'; x.fillRect(0, 0, cv.width, cv.height);
+  x.fillStyle = kh ? '#F3ECE0' : '#F5EADF'; x.fillRect(0, 0, cv.width, cv.height);
   for (let c = 0; c < kolom.length; c++) { // tiap kolom digambar bergeser ke kanan
     x.save(); x.translate(c * (W - pad), 0);
     let y = pad; for (const b of kolom[c]) { await b.g(y); y += b.h + gap; }
