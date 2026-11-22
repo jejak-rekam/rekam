@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.4.3',
+  VERSI: '1.5.0',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -60,6 +60,25 @@ const ILK_SVG = {
   merpati: '<path d="M10 34c10-2 18-10 22-20 4 9 6 16 4 22 8-6 16-6 24-4-6 10-18 16-32 14-7-1-13-6-18-12z" fill="#fff"/><path d="M36 36c-2 6-8 10-14 10" stroke="#AFC6E6" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="18" cy="32" r="2" fill="#4A6E99"/>',
   cahaya: '<path d="M35 6l7 16 17 2-13 11 4 17-15-9-15 9 4-17-13-11 17-2z" fill="#F6E6C4" stroke="#E0A532" stroke-width="3" stroke-linejoin="round"/>'
 };
+const ILS_SVG = { // ikon belajar (seminar / kelas)
+  buku: '<path d="M8 12h24a6 6 0 0 1 6 6v32a5 5 0 0 0-5-5H8z" fill="#fff"/><path d="M62 12H44a6 6 0 0 0-6 6v32a5 5 0 0 1 5-5h19z" fill="#DDEBD9"/><rect x="44" y="20" width="12" height="3" rx="1.5" fill="#3F6B45"/><rect x="44" y="27" width="10" height="3" rx="1.5" fill="#3F6B45"/>',
+  pensil: '<rect x="10" y="22" width="40" height="12" rx="3" fill="#F3C94E" transform="rotate(-30 30 28)"/><path d="M47 13l9-3-4 9z" fill="#4A3428"/><rect x="6" y="36" width="9" height="12" rx="3" fill="#F29BA0" transform="rotate(-30 10 42)"/>',
+  lampu: '<circle cx="35" cy="22" r="15" fill="#F3CF6E"/><circle cx="30" cy="17" r="4" fill="#fff" opacity=".7"/><rect x="28" y="37" width="14" height="9" rx="3" fill="#3F6B45"/><path d="M8 20h6M56 20h6M14 6l4 4M56 6l-4 4" stroke="#E0A82E" stroke-width="3" stroke-linecap="round"/>',
+  topi: '<path d="M35 8l30 12-30 12L5 20z" fill="#2E3A55"/><path d="M18 26v12c8 6 26 6 34 0V26l-17 7z" fill="#3E4C6E"/><path d="M60 22v16" stroke="#E0A82E" stroke-width="3"/><circle cx="60" cy="40" r="4" fill="#E0A82E"/>',
+  papan: '<rect x="6" y="8" width="58" height="36" rx="5" fill="#3F6B45"/><rect x="6" y="8" width="58" height="36" rx="5" fill="none" stroke="#B88A55" stroke-width="4"/><path d="M14 20h20M14 28h30M14 36h14" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".85"/>'
+};
+const TEMA = { // tampilan per jenis: gambar Ippo, judul, warna, ikon kartu
+  khotbah: { k: 'CATATAN KHOTBAH', app: 'ippo-alkitab', wa: 'ippo-doa', kep: '#F6E6C4', bg: '#F3ECE0', pos: '#FFFBF3', kc: '#8A6A1E', jc: '#4A3A2A', ic: '#6E5530', ikon: ['matahari', 'hati', 'buku', 'merpati', 'cahaya'].map(n => ILK_SVG[n]),
+    PA: { coral: '#F3E9DD', butter: '#FBF1D9', sage: '#E8EFE6', blue: '#E3ECF6', lilac: '#E3ECF6' }, TK: { coral: '#8A6248', butter: '#9A7420', sage: '#4E7560', blue: '#4A6E99', lilac: '#4A6E99' }, HX: { coral: '#B08560', butter: '#C9A24A', sage: '#6E9682', blue: '#6F8FBC', lilac: '#6F8FBC' } },
+  meeting: { k: 'NOTULEN MEETING', app: 'ippo-meeting', wa: 'ippo-meeting', kep: '#DCE4F0', bg: '#EEF1F6', pos: '#F8FAFD', kc: '#C25A1C', jc: '#1F3358', ic: '#3D5070',
+    PA: { coral: '#FDE3D2', butter: '#FFEFD6', sage: '#E1E8F2', blue: '#DCE4F0', lilac: '#E6E9F2' }, TK: { coral: '#9A4214', butter: '#8A5A10', sage: '#2C4266', blue: '#24406E', lilac: '#3A4470' }, HX: { coral: '#E8762B', butter: '#E89A2B', sage: '#2F4A78', blue: '#3D5A8C', lilac: '#5A6890' } },
+  kelas: { k: 'CATATAN BELAJAR', app: 'ippo-kelas', wa: 'ippo-kelas', kep: '#CFE0C8', bg: '#EFF3E8', pos: '#FBFCF6', kc: '#3F6B45', jc: '#24402A', ic: '#4A5E40', ikon: Object.values(ILS_SVG),
+    PA: { coral: '#FFF1C9', butter: '#FFF6D6', sage: '#DDEBD9', blue: '#E3EEDF', lilac: '#EEF3E6' }, TK: { coral: '#7A5A10', butter: '#7A5A10', sage: '#2E5232', blue: '#3A5A3A', lilac: '#4A5A3A' }, HX: { coral: '#E0A82E', butter: '#D99A1E', sage: '#3F6B45', blue: '#557F5A', lilac: '#6E8A4E' } },
+  lain: { k: '', app: 'ippo-lainnya', wa: 'ippo-lainnya', kep: '#E9DBF3', bg: '#F4EEF7', pos: '#FCF8FD', kc: '#8A4A9E', jc: '#3E2A52', ic: '#5E4870',
+    PA: { coral: '#FADDE6', butter: '#FBE9EF', sage: '#EDE1F4', blue: '#E6DDF3', lilac: '#F1E2F2' }, TK: { coral: '#8A3555', butter: '#8A4A60', sage: '#5A3E78', blue: '#4E3E7A', lilac: '#6A3A70' }, HX: { coral: '#E0708F', butter: '#E58AA6', sage: '#8A6AB8', blue: '#7A68B8', lilac: '#A070B0' } }
+};
+const temaDari = m => { const t = TEMA[m.jenis || 'meeting'] || TEMA.lain; return { ...t, k: t.k || 'CATATAN ' + namaJenis(m.jenis).toUpperCase() }; };
+const gayaTema = t => `--peach:${t.kep};background:${t.pos};--kc:${t.kc};--jc:${t.jc};--ic:${t.ic};` + WARNA.map(c => `--p-${c}:${t.PA[c]};--tk-${c}:${t.TK[c]};--hx-${c}:${t.HX[c]}`).join(';');
 const ill = n => `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${ILL[n] || ILL.ide}</svg>`;
 
 /* ========== UTIL ========== */
@@ -802,19 +821,19 @@ R.hasil = id => {
   const m = S0.meeting.find(x => x.id === decodeURIComponent(id)); if (!m) return buka('#/');
   const h = m.hasil, o = orangById(m.orangId) || { nama: '?' };
   const iBag = b => Math.max(0, h.bagian.indexOf(b));
-  const kh = m.jenis === 'khotbah', ILK = ['matahari', 'hati', 'buku', 'merpati', 'cahaya'];
-  const kartu = (p, i) => { const c = WARNA[i % 5]; return `<article class="k1 clay p-${c}" data-bag="${iBag(p.bagian)}"><span class="tag t-${c}">${esc(p.bagian || h.bagian[0])}</span><div class="hd"><span class="i3 n c-${c}"><span>${i + 1}</span></span><h3>${esc(p.judul)}</h3></div><p class="t-${c}">${esc(p.isi)}</p>${kh ? `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${ILK_SVG[ILK[i % 5]]}</svg>` : ill(p.ikon)}</article>`; };
+  const TM = temaDari(m);
+  const kartu = (p, i) => { const c = WARNA[i % 5]; return `<article class="k1 clay p-${c}" data-bag="${iBag(p.bagian)}"><span class="tag t-${c}">${esc(p.bagian || h.bagian[0])}</span><div class="hd"><span class="i3 n c-${c}"><span>${i + 1}</span></span><h3>${esc(p.judul)}</h3></div><p class="t-${c}">${esc(p.isi)}</p>${TM.ikon ? `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${TM.ikon[i % TM.ikon.length]}</svg>` : ill(p.ikon)}</article>`; };
   $('#app').innerHTML = `
   <div class="top"><button class="btn-ikon clay" data-back aria-label="Kembali">${svg('back', '#4A3428')}</button><span class="pill clay" style="background:var(--card);color:var(--ink);font-weight:800">${esc(o.nama)} · ${esc(tglPendek(m.tanggal))}${m.durasi ? ' · ' + esc(durasiTeks(m.durasi)) : ''}</span></div>
-  <section class="poster clay${m.jenis === 'khotbah' ? ' khotbah' : ''}">
-    <div class="kepala"><img src="./${m.jenis === 'khotbah' ? 'ippo-alkitab' : 'ippo'}.webp" alt=""><div class="isi"><small class="k">${m.jenis === 'khotbah' ? 'CATATAN KHOTBAH' : 'RINGKASAN ' + esc(namaJenis(m.jenis).toUpperCase())}</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
+  <section class="poster tm clay" style="${esc(gayaTema(TM))}">
+    <div class="kepala"><img src="./${TM.app}.webp" alt=""><div class="isi"><small class="k">${esc(TM.k)}</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
     ${h.bagian.length > 1 ? `<div class="filter" role="group" aria-label="Saring per bagian"><button class="chip on i3 c-sage" data-f="-1"><span>Semua</span></button>${h.bagian.map((b, i) => `<button class="chip clay" data-f="${i}">${i + 1} · ${esc(b)}</button>`).join('')}</div>` : ''}
     <div class="kartu">${h.poin.map(kartu).join('') || '<p class="kosong">Tidak ada poin penting.</p>'}</div>
     ${h.penutup ? `<div class="pita clay">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
   </section>
   ${h.tugas.length ? `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('tugas', '#fff', '#E0A532')}</span><h3>Tugas</h3></div>${h.tugas.map(t => barisTugas(t, m, false)).join('')}</section>` : ''}
   ${seksiDari(h).map(seksiHtml).join('')}
-  <div class="dua"><button class="btn clay" id="bSimpan">${svg('unduh', '#4A3428')}<span>Simpan gambar</span></button><button class="btn utama i3 c-coral" id="bKirim">${svg('kirim')}<span>Kirim ke WA</span></button></div>
+  <div class="dua"><button class="btn clay" id="bSimpan">${svg('unduh', '#4A3428')}<span>Simpan gambar</span></button><button class="btn utama i3 c-coral" id="bKirim"><img class="wa" src="./wa.svg" alt=""><span>Kirim ke WA</span></button></div>
   <button class="link" id="bHapus" style="color:#A8331A">Hapus meeting ini</button>`;
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     const f = +b.dataset.f;
@@ -844,30 +863,26 @@ R.hasil = id => {
 /* Gambar poster (PNG) untuk disimpan / dikirim */
 const muatGambar = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
 async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun beberapa kolom berdampingan supaya tidak memanjang
-  const kh = m.jenis === 'khotbah'; // khotbah: warna teduh, Ippo berdoa, ayat utama besar di atas
-  const PA = kh ? { coral: '#F3E9DD', butter: '#FBF1D9', sage: '#E8EFE6', blue: '#E3ECF6', lilac: '#E3ECF6' } : PASTEL;
-  const TK = kh ? { coral: '#8A6248', butter: '#9A7420', sage: '#4E7560', blue: '#4A6E99', lilac: '#4A6E99' } : TEKS;
-  const HX = kh ? { coral: '#B08560', butter: '#C9A24A', sage: '#6E9682', blue: '#6F8FBC', lilac: '#6F8FBC' } : HEX;
-  const ILK = ['matahari', 'hati', 'buku', 'merpati', 'cahaya'];
+  const kh = m.jenis === 'khotbah', TM = temaDari(m), { PA, TK, HX } = TM; // tiap jenis punya warna, Ippo, dan ikon sendiri
   const h = m.hasil, W = 1080, pad = 48, gap = 22, kw = (W - pad * 2 - gap) / 2, iw = W - pad * 2 - 80, X0 = pad + 40;
   await document.fonts?.load?.('900 40px Nunito').catch(() => {});
   const ukur = document.createElement('canvas').getContext('2d');
   const F = (s, w = 800) => `${w} ${s}px Nunito, system-ui, sans-serif`;
   const bungkus = (t, maks, font) => { ukur.font = font; const out = []; let l = ''; String(t || '').split(/\s+/).forEach(w => { const c = l ? l + ' ' + w : w; if (ukur.measureText(c).width > maks && l) { out.push(l); l = w; } else l = c; }); if (l) out.push(l); return out; };
   const gbr = s => muatGambar('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ' + (/^<svg[^>]* width=/.test(s) ? '' : 'width="96" height="96" '))));
-  const anjing = await muatGambar(kh ? './ippo-doa.webp' : './ippo.webp').catch(() => null);
+  const anjing = await muatGambar(`./${TM.wa}.webp`).catch(() => null);
   let x; // kanvas halaman yang sedang digambar
   const kotak = (X, Y, w, hh, r, c) => { x.fillStyle = c; x.beginPath(); x.roundRect(X, Y, w, hh, r); x.fill(); };
   const tulis = (baris, X, Y, font, warna, jarak) => { x.font = font; x.fillStyle = warna; baris.forEach((l, i) => x.fillText(l, X, Y + i * jarak)); };
-  const blok = [], KEP = kh ? '#F6E6C4' : '#F6CDB8';
+  const blok = [], KEP = TM.kep;
   // kepala (judul + inti + anjing)
   const jdl = bungkus(h.judul, 470, F(60, 900)), inti = bungkus(h.inti, 470, F(28, 700)), tK = Math.max(380, 150 + jdl.length * 66 + inti.length * 38 + 30);
   blok.push({ h: tK, g: async y => {
     kotak(pad, y, W - pad * 2, tK, 56, KEP);
     if (anjing) { const s = Math.min(440, (tK - 24) * anjing.width / anjing.height); x.drawImage(anjing, W - pad - s + 20, y + tK - s * anjing.height / anjing.width - 10, s, s * anjing.height / anjing.width); }
-    tulis([`${kh ? 'CATATAN KHOTBAH' : 'RINGKASAN ' + namaJenis(m.jenis).toUpperCase()} · ${o.nama.toUpperCase()}`], pad + 44, y + 74, F(24, 900), kh ? '#8A6A1E' : '#8A3E22', 0);
-    tulis(jdl, pad + 44, y + 160, F(60, 900), kh ? '#4A3A2A' : '#4A2A1C', 66);
-    tulis(inti, pad + 44, y + 172 + jdl.length * 66, F(28, 700), kh ? '#6E5530' : '#6E4A38', 38);
+    tulis([`${TM.k} · ${o.nama.toUpperCase()}`], pad + 44, y + 74, F(24, 900), TM.kc, 0);
+    tulis(jdl, pad + 44, y + 160, F(60, 900), TM.jc, 66);
+    tulis(inti, pad + 44, y + 172 + jdl.length * 66, F(28, 700), TM.ic, 38);
   } });
   let daftarSeksi = seksiDari(h);
   if (kh) { const sa = daftarSeksi.find(s => s.bentuk === 'ayat' && s.isi.length); if (sa) {
@@ -889,11 +904,11 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
         x.textAlign = 'center'; tulis([String(i + 1)], X + 58, y + 110, F(32, 900), '#fff', 0); x.textAlign = 'left';
         tulis(k.t, X + 104, y + 120, F(34, 900), '#4A3428', 40);
         tulis(k.d, X + 28, y + 132 + k.t.length * 40, F(28, 700), TK[c], 36);
-        try { x.drawImage(await gbr(`<svg viewBox="0 0 70 56" width="140" height="112">${kh ? ILK_SVG[ILK[i % 5]] : ILL[p.ikon] || ILL.ide}</svg>`), X + kw - 160, y + hh - 124, 140, 112); } catch {}
+        try { x.drawImage(await gbr(`<svg viewBox="0 0 70 56" width="140" height="112">${TM.ikon ? TM.ikon[i % TM.ikon.length] : ILL[p.ikon] || ILL.ide}</svg>`), X + kw - 160, y + hh - 124, 140, 112); } catch {}
       }
     } });
   }
-  if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 56; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, KEP); x.textAlign = 'center'; tulis(pt, W / 2, y + 58, F(30, 900), kh ? '#6E5530' : '#6E3420', 40); x.textAlign = 'left'; } }); }
+  if (h.penutup) { const pt = bungkus(h.penutup, W - pad * 2 - 120, F(30, 900)), hh = pt.length * 40 + 56; blok.push({ h: hh, g: async y => { kotak(pad, y, W - pad * 2, hh, hh / 2, KEP); x.textAlign = 'center'; tulis(pt, W / 2, y + 58, F(30, 900), TM.ic, 40); x.textAlign = 'left'; } }); }
   // seksi berisi daftar; kalau tidak muat, sisanya lanjut di halaman berikutnya
   const seksi = (judul, ikon, c, items, latar = '#FBF4EC') => blok.push({ judul, ikon, c, items, latar });
   if (h.tugas.length) seksi('Tugas', svg('tugas', '#fff', HX.butter), 'butter', h.tugas.map(t => { const l = bungkus(t.apa, iw - 70, F(28, 800)), k = [t.siapa, t.kapan].filter(Boolean).join(' · '); return { h: l.length * 38 + (k ? 34 : 0) + 26, g: async y => {
@@ -947,7 +962,7 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
   while (kolom.length > n) { batas += 30; kolom = pack(batas); }
   const tinggiKol = kolom.map(k => k.reduce((s, b) => s + b.h + gap, 0) - gap);
   const cv = document.createElement('canvas'); cv.width = W * kolom.length - pad * (kolom.length - 1); cv.height = pad + Math.max(...tinggiKol) + 90; x = cv.getContext('2d');
-  x.fillStyle = kh ? '#F3ECE0' : '#F5EADF'; x.fillRect(0, 0, cv.width, cv.height);
+  x.fillStyle = TM.bg; x.fillRect(0, 0, cv.width, cv.height);
   for (let c = 0; c < kolom.length; c++) { // tiap kolom digambar bergeser ke kanan
     x.save(); x.translate(c * (W - pad), 0);
     let y = pad; for (const b of kolom[c]) { await b.g(y); y += b.h + gap; }

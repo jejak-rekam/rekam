@@ -131,7 +131,6 @@ label.lb{display:block;font-size:14px;font-weight:800;margin:4px 2px 8px}
 .sx-istilah{display:flex;flex-direction:column;padding:8px 0;border-bottom:2px dashed var(--well)}.sx-istilah b{font-size:14px;font-weight:900}.sx-istilah span{font-size:13px;font-weight:700;color:var(--sub)}
 .sx-pesan{white-space:pre-wrap;font-size:14px;font-weight:600;line-height:1.5;padding:12px 14px;border-radius:18px;background:var(--well)}
 .sx-belum{background:var(--p-coral)}.sx-belum .sx-poin{color:#7A3A22}.sx-belum .sx-poin:before{background:var(--coral)}
-.poster.khotbah{--p-coral:#F3E9DD;--p-butter:#FBF1D9;--p-sage:#E8EFE6;--p-blue:#E3ECF6;--p-lilac:#E3ECF6;--peach:#F6E6C4;background:#FFFBF3}
-.poster.khotbah .t-coral{color:#8A6248}.poster.khotbah .t-butter{color:#9A7420}.poster.khotbah .t-sage{color:#4E7560}.poster.khotbah .t-blue,.poster.khotbah .t-lilac{color:#4A6E99}
-.poster.khotbah .c-coral{background:#B08560}.poster.khotbah .c-butter{background:#C9A24A}.poster.khotbah .c-lilac{background:#6F8FBC}
-.poster.khotbah small.k{color:#8A6A1E}.poster.khotbah .pita{background:#F6E6C4;color:#6E5530}
+
+.poster.tm small.k{color:var(--kc)}.poster.tm h2{color:var(--jc)}.poster.tm p.inti{color:var(--ic)}.poster.tm .pita{background:var(--peach);color:var(--ic)}.poster.tm .t-coral{color:var(--tk-coral)}.poster.tm .c-coral{background:var(--hx-coral)}.poster.tm .t-butter{color:var(--tk-butter)}.poster.tm .c-butter{background:var(--hx-butter)}.poster.tm .t-sage{color:var(--tk-sage)}.poster.tm .c-sage{background:var(--hx-sage)}.poster.tm .t-blue{color:var(--tk-blue)}.poster.tm .c-blue{background:var(--hx-blue)}.poster.tm .t-lilac{color:var(--tk-lilac)}.poster.tm .c-lilac{background:var(--hx-lilac)}
+.btn img.wa{width:24px;height:24px;flex:none}
