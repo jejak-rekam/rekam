@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.4.1',
+  VERSI: '1.4.3',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -179,7 +179,6 @@ const TEMPLATE = {
     ['Sudah disepakati', 'centang', 'hal yang sudah disepakati bersama'],
     ['Angka & tanggal penting', 'angka', 'harga, jumlah, persen, tanggal penting; label = nama angkanya (maks 4 kata), teks = nilainya singkat'],
     ['Linimasa', 'linimasa', 'jadwal dan tenggat berurutan; label = hari/tanggal singkat, teks = kegiatan, ket = siapa'],
-    ['Jalannya meeting', 'linimasa', 'urutan obrolan; label = menit dari awal (m:ss), teks = topik, ket = keterangan singkat'],
     ['Masih belum jelas', 'belum', 'hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka/klaim tanpa dasar, atau yang saling bertentangan. Tulis langsung sebagai kalimat pendek (bukan format celah-tanya). Kosongkan kalau memang tidak ada'],
     ['Kalimat penting', 'kutipan', 'maksimal 3; teks = kalimat asli seperti diucapkan (boleh bahasa Jawa), ket = artinya dalam bahasa Indonesia dan siapa yang bilang'],
     ['Draf pesan tindak lanjut', 'pesan', 'SATU pesan WhatsApp sopan dari pemilik HP kepada orang itu: terima kasih, ringkasan kesepakatan, tugas dan tanggalnya; tulis di isi[0].teks']] },
@@ -339,9 +338,8 @@ function gabungLokal(list) { // cadangan kalau AI gagal menyatukan: gabungkan se
     poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.teks).slice(0, 15) })) };
 }
 function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
-  if (Array.isArray(h.seksi)) return h.seksi;
+  if (Array.isArray(h.seksi)) return h.seksi.map(s => s.bentuk !== 'ayat' ? s : { ...s, isi: s.isi.map(x => ({ ...x, ket: /dibaca/i.test(x.ket || '') ? 'dibacakan' : 'cek di Alkitab' })) }); // keterangan ayat hanya boleh dua ini
   return [
-    ['Jalannya meeting', 'linimasa', (h.alur || []).map(a => ({ label: a.waktu, teks: a.judul, ket: a.ket }))],
     ['Sudah disepakati', 'centang', (h.sepakat || []).map(teks => ({ teks }))],
     ['Masih belum jelas', 'belum', (h.tanya || []).map(teks => ({ teks }))],
     ['Kalimat penting', 'kutipan', (h.kutipan || []).map(k => ({ teks: k.asli, ket: [k.arti, k.siapa].filter(Boolean).join(' — ') }))]
