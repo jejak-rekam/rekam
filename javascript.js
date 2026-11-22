@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.4.0',
+  VERSI: '1.4.1',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -224,7 +224,7 @@ ${aturanSeksi(jenis)}
 - penutup: hal terpenting berikutnya (langkah berikutnya atau pesan utama), 1 kalimat pendek.${j.potongan ? `\n\nPENTING: rekaman ini adalah bagian ${j.potongan.k} dari ${j.potongan.N} dari SATU acara yang sama, dimulai pada menit ke-${j.potongan.mulai}. Ringkas hanya isi bagian ini. Waktu di linimasa dihitung dari awal acara (tambahkan ${j.potongan.mulai} menit).` : ''}${sumber === 'foto' ? '\n- Untuk waktu di linimasa yang dari foto, pakai nomor foto, misalnya "Foto 1-3".' : ''}`;
 }
 /* Jawaban AI dikirim sedikit demi sedikit (streaming) supaya sambungan tidak "diam" lalu diputus jaringan */
-async function mintaRingkasan(m, body, onTeks) {
+async function mintaRingkasan(m, body, onTeks, batas = 60000) {
   const ac = new AbortController(); let alasan = '', jam;
   const pasangJam = (ms, a) => { clearTimeout(jam); jam = setTimeout(() => { alasan = a; ac.abort(); }, ms); };
   pasangJam(8 * 60000, 'awal'); // menunggu Google selesai mendengarkan rekaman
@@ -245,6 +245,7 @@ async function mintaRingkasan(m, body, onTeks) {
         if (d.error) { const e = new GagalAI(pesanError(d.error.code || 500, d.error.message)); e.status = d.error.code || 500; e.detail = d.error.message || ''; throw e; }
         if (d.promptFeedback?.blockReason) throw new GagalAI('Rekaman ditolak oleh AI. Coba rekaman lain.');
         for (const p of d.candidates?.[0]?.content?.parts || []) { if (p.thought) blok = 'mikir'; else if (p.text) { teks += p.text; blok = 'tulis'; } }
+        if (teks.length > batas) { const e = new GagalAI('Jawaban AI kepanjangan (berulang-ulang).'); e.status = 'panjang'; throw e; } // AI macet mengulang tulisan: hentikan, jangan ditunggu
         onTeks(teks.length, blok);
       }
     }
@@ -268,9 +269,9 @@ async function calonModel() {
   }
   return [...new Set([S0.modelJalan, S0.model, ...daftarModel, CONFIG.MODEL_CADANGAN])].filter(m => m && !PENUH.has(m)).slice(0, 8);
 }
-async function mintaJSON(isi, maju) { // kirim ke AI, terima ringkasan berbentuk data
-  let pikir = { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
-  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 32768, temperature: 0.3, ...(pikir ? { thinkingConfig: pikir } : {}) } });
+async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan (teks saja), tanpa mode berpikir dan jawaban dibatasi // kirim ke AI, terima ringkasan berbentuk data
+  let pikir = cepat ? null : { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
+  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: cepat ? 12000 : 32768, temperature: 0.3, ...(pikir ? { thinkingConfig: pikir } : {}) } });
   const tunggu = d => new Promise(s => setTimeout(s, d));
   const calon = await calonModel(), gagal = [];
   for (let putaran = 0; putaran < 2; putaran++) for (const m of calon) { // putaran kedua: semua model dicoba lagi setelah jeda
@@ -278,9 +279,9 @@ async function mintaJSON(isi, maju) { // kirim ke AI, terima ringkasan berbentuk
     if (putaran) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Semua model sibuk. Menunggu 30 detik lalu mencoba lagi.'); await tunggu(30000); }
     for (let coba = 0; coba < 1 + !putaran; coba++) {
       try {
-        const teks = await mintaRingkasan(m, body(), maju);
+        const teks = await mintaRingkasan(m, body(), maju, cepat ? 40000 : 60000);
         let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
-        if (!o) throw new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.');
+        if (!o) { const x = new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.'); x.status = 'panjang'; throw x; }
         S0.modelJalan = m; // model yang berhasil dicoba duluan untuk bagian berikutnya
         return rapikan(o);
       } catch (e) {
@@ -288,6 +289,7 @@ async function mintaJSON(isi, maju) { // kirim ke AI, terima ringkasan berbentuk
         if (e.status === 400 && pikir && /think/i.test(e.detail || '')) { pikir = null; coba--; continue; } // model ini tidak mendukung pengaturan berpikir
         if (e.status === 429 || e.status === 404) { PENUH.add(m); setTahap('Kuota model penuh, pindah ke model lain…', null, `Otomatis, tidak perlu menekan apa-apa. (${m} dilewati)`); break; }
         semuaPenuh = false;
+        if (e.status === 'panjang') { gagal.push(m); setTahap('Jawaban AI kacau, pindah ke model lain…', null, `Otomatis, tidak perlu menekan apa-apa. (${m})`); break; }
         if (e.status >= 500) { gagal.push(m); setTahap('Server sibuk, mencoba lagi otomatis…', null, `Tidak perlu menekan apa-apa, tunggu sebentar. (${m})`); if (!coba && !putaran) await tunggu(8000); continue; } // sekali ulang, lalu pindah model
         throw e; // putus, terlalu lama, atau kunci salah: tampilkan tombol Coba lagi
       }
@@ -326,9 +328,16 @@ ${aturanSeksi(j.jenis || 'meeting')}
 - penutup: hal terpenting berikutnya, 1 kalimat pendek.
 
 DATA:
-${JSON.stringify(data)}` }], mj);
+${JSON.stringify(data)}` }], mj, true);
 }
 const GAYA = { belum: ['coral', 'tanya'], centang: ['sage', 'star'], angka: ['coral', 'star'], linimasa: ['blue', 'jam'], daftar: ['lilac', 'tanya'], kutipan: ['sage', 'kutip'], ayat: ['butter', 'kutip'], istilah: ['blue', 'star'], langkah: ['coral', 'tugas'], pesan: ['sage', 'kirim'] };
+function gabungLokal(list) { // cadangan kalau AI gagal menyatukan: gabungkan semua bagian apa adanya tanpa dobel
+  const unik = (xs, k) => { const s = new Set(); return xs.filter(x => { const v = k(x).toLowerCase().trim(); return v && !s.has(v) && s.add(v); }); };
+  const sk = {}; list.forEach(h => seksiDari(h).forEach(s => { const a = sk[s.judul] = sk[s.judul] || { judul: s.judul, bentuk: s.bentuk, isi: [] }; a.isi.push(...s.isi); }));
+  const poin = []; for (let i = 0; poin.length < 10 && list.some(h => h.poin[i]); i++) list.forEach(h => h.poin[i] && poin.length < 10 && poin.push(h.poin[i]));
+  return { judul: list[0].judul, inti: list[0].inti, penutup: list[list.length - 1].penutup, bagian: unik(list.flatMap(h => h.bagian), x => x).slice(0, 6),
+    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.teks).slice(0, 15) })) };
+}
 function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
   if (Array.isArray(h.seksi)) return h.seksi;
   return [
@@ -751,7 +760,8 @@ async function prosesJalan() {
       p.hasil = await rangkum(p.file, { ...j, durasi: p.durasi, potongan: N > 1 ? { k: k + 1, N, mulai: Math.round(p.mulai / 60) } : null }, maju(lo + lebar * 0.5, lo + lebar, label));
       hapusFileGemini(p.file.name); p.file = null; p.blob = null; // rekaman bagian ini tidak dipakai lagi
     }
-    const hasil = N > 1 ? await gabungkan(j.bagian.map(p => p.hasil), j, maju(86, 96, 'Menyatukan kesimpulan: ')) : j.bagian[0].hasil;
+    let hasil = j.bagian[0].hasil;
+    if (N > 1) { try { hasil = await gabungkan(j.bagian.map(p => p.hasil), j, maju(86, 96, 'Menyatukan kesimpulan: ')); } catch (e) { if (e.status === 401 || e.status === 403) throw e; hasil = gabungLokal(j.bagian.map(p => p.hasil)); toast('AI gagal menyatukan, jadi bagian-bagiannya digabung langsung. Isinya tetap lengkap.', 6000); } }
     setTahap('Menyimpan…', 97);
     let o = S0.orang.find(x => x.nama.toLowerCase() === j.nama.toLowerCase());
     const orangBaru = !o; if (!o) o = { id: uid(), nama: j.nama, warna: WARNA[S0.orang.length % 5], dibuat: Date.now() };
