@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.6.0',
+  VERSI: '1.6.1',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -207,7 +207,7 @@ const TEMPLATE = {
     ['Penerapan minggu ini', 'daftar', 'hal praktis yang bisa dilakukan minggu ini'],
     ['Pertanyaan renungan', 'daftar', 'pertanyaan untuk direnungkan sendiri atau dibahas di komsel']] },
   kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: false, seksi: [
-    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = nama tabel + baris (mis. "Pasti Fixed · Mass 1-5 th"), teks = semua kolomnya dalam satu baris, SETIAP nilai WAJIB diawali nama kolom SINGKAT maksimal 2 kata (mis. "Plat 7,40% · Gold/TO 7,75% · Sec 8,00% · Multi 8,25%"); kepanjangan nama kolom ditulis SEKALI saja sebagai item pertama tiap tabel (label = nama tabel · Kolom, teks = "Plat = Primary Selected Platinum & Platinum · ..."). Kolom kosong (-) dilewati. Tulis singkat supaya SEMUA tabel muat. Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Maksimal 70 baris; dahulukan semua tabel tarif, tenor maksimal, biaya, plafon, lalu kontak. Kosongkan kalau tidak ada angka'],
+    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = JUDUL TABEL PERSIS seperti tertulis di materi (jangan dipotong, kata pembeda seperti "Loyalist", "Syariah", "Promo" wajib ikut) + baris (mis. "Pasti Fixed Nasabah Loyalist · Mass 1-5 th"), teks = semua kolomnya dalam satu baris, SETIAP nilai WAJIB diawali nama kolom SINGKAT maksimal 2 kata (mis. "Plat 7,40% · Gold/TO 7,75% · Sec 8,00% · Multi 8,25%"); kepanjangan nama kolom ditulis SEKALI saja sebagai item pertama tiap tabel (label = nama tabel · Kolom, teks = "Plat = Primary Selected Platinum & Platinum · ..."). Kolom kosong (-) dilewati. Tulis singkat supaya SEMUA tabel muat. Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Maksimal 70 baris; dahulukan semua tabel tarif, tenor maksimal, biaya, plafon, lalu kontak. Kosongkan kalau tidak ada angka'],
     ['Syarat & ketentuan', 'daftar', 'syarat, kriteria, ketentuan, siapa/produk yang berlaku atau TIDAK berlaku, promo dan batasnya, ditulis sesuai materi (satu poin = satu syarat). Angka tetap boleh ditulis di sini kalau bagian dari syarat. Kosongkan kalau tidak ada'],
     ['Istilah penting', 'istilah', 'HANYA istilah yang artinya dijelaskan di materi. label = istilah, teks = artinya sesuai materi (wajib diisi). Istilah yang artinya tidak dijelaskan jangan ditulis'],
     ['Langkah praktik', 'langkah', 'HANYA kalau materi benar-benar mengajarkan urutan langkah/cara (mis. tutorial "langkah 1, 2, 3"). Daftar produk, syarat, atau info BUKAN langkah. Dilarang menyusun langkah sendiri dari isi materi. Kalau tidak ada, WAJIB daftar kosong'],
@@ -375,7 +375,9 @@ async function periksaUlang(sumber, h, j) {
 Cocokkan SETIAP item dengan materi asli, lalu kembalikan HANYA koreksi untuk item yang salah:
 - nama/label/judul baris yang salah atau tertukar (mis. nama tabel salah),
 - kalimat yang tidak sesuai materi (kata diganti, makna bergeser, mis. "cashback" padahal "bebas biaya"),
-- kalimat atau arti istilah yang TIDAK ADA di materi (karangan) -> hapus: true.
+- kalimat atau arti istilah yang TIDAK ADA di materi (karangan) -> hapus: true,
+- nama tabel di label ANGKA yang tidak persis sama dengan judul tabel di materi (kata pembeda hilang, mis. "Loyalist") -> ganti label dengan judul lengkap,
+- item yang isinya sama dengan item lain di bagian yang sama walau kalimatnya beda (dobel) -> hapus: true pada salah satunya (bukan untuk ANGKA).
 Untuk item ANGKA: hanya boleh mengganti label (nama baris), jangan mengisi teks.
 tambah: baris tabel atau syarat di materi yang belum ada sama sekali di ringkasan (bagian = judul bagian yang cocok).
 Jangan mengoreksi gaya bahasa. Kalau semua sudah benar, kembalikan daftar kosong. Bahasa Indonesia.
