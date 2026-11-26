@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.5.4',
+  VERSI: '1.5.5',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -207,7 +207,7 @@ const TEMPLATE = {
     ['Penerapan minggu ini', 'daftar', 'hal praktis yang bisa dilakukan minggu ini'],
     ['Pertanyaan renungan', 'daftar', 'pertanyaan untuk direnungkan sendiri atau dibahas di komsel']] },
   kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: false, seksi: [
-    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = nama tabel + baris (mis. "Pasti Fixed · Mass 1-5 th"), teks = semua kolomnya dalam satu baris, SETIAP nilai WAJIB diawali nama kolomnya (mis. "Primary 7,40% · Gold/TO 7,75% · Secondary 8,00% · Multiguna 8,25%"); kolom yang kosong (-) dilewati, jangan menulis nilai tanpa nama kolom. Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Maksimal 70 baris; dahulukan semua tabel tarif, tenor maksimal, biaya, plafon, lalu kontak. Kosongkan kalau tidak ada angka'],
+    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = nama tabel + baris (mis. "Pasti Fixed · Mass 1-5 th"), teks = semua kolomnya dalam satu baris, SETIAP nilai WAJIB diawali nama kolom SINGKAT maksimal 2 kata (mis. "Plat 7,40% · Gold/TO 7,75% · Sec 8,00% · Multi 8,25%"); kepanjangan nama kolom ditulis SEKALI saja sebagai item pertama tiap tabel (label = nama tabel · Kolom, teks = "Plat = Primary Selected Platinum & Platinum · ..."). Kolom kosong (-) dilewati. Tulis singkat supaya SEMUA tabel muat. Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Maksimal 70 baris; dahulukan semua tabel tarif, tenor maksimal, biaya, plafon, lalu kontak. Kosongkan kalau tidak ada angka'],
     ['Syarat & ketentuan', 'daftar', 'syarat, kriteria, ketentuan, siapa/produk yang berlaku atau TIDAK berlaku, promo dan batasnya, ditulis sesuai materi (satu poin = satu syarat). Angka tetap boleh ditulis di sini kalau bagian dari syarat. Kosongkan kalau tidak ada'],
     ['Istilah penting', 'istilah', 'HANYA istilah yang artinya dijelaskan di materi. label = istilah, teks = artinya sesuai materi (wajib diisi). Istilah yang artinya tidak dijelaskan jangan ditulis'],
     ['Langkah praktik', 'langkah', 'HANYA kalau materi benar-benar mengajarkan urutan langkah/cara (mis. tutorial "langkah 1, 2, 3"). Daftar produk, syarat, atau info BUKAN langkah. Dilarang menyusun langkah sendiri dari isi materi. Kalau tidak ada, WAJIB daftar kosong'],
@@ -252,11 +252,11 @@ async function mintaRingkasan(m, body, onTeks, batas = 60000) {
   try { r = await fetch(`${CONFIG.API}/v1beta/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, { method: 'POST', signal: ac.signal, headers: { 'x-goog-api-key': S0.kunci, 'Content-Type': 'application/json' }, body }); }
   catch { clearTimeout(jam); const e = new GagalAI(alasan ? 'Google terlalu lama menjawab. Tekan Coba lagi (tidak perlu unggah ulang).' : pesanError(0)); e.status = alasan ? 'waktu' : 0; throw e; }
   if (!r.ok) { clearTimeout(jam); const t = await r.text().catch(() => ''); console.warn('Gemini', r.status, t); const e = new GagalAI(pesanError(r.status, t)); e.status = r.status; e.detail = t; throw e; }
-  const baca = r.body.getReader(), dek = new TextDecoder(); let sisa = '', teks = '', blok = '';
+  DENYUT = Date.now(); const baca = r.body.getReader(), dek = new TextDecoder(); let sisa = '', teks = '', blok = '';
   try {
     for (;;) {
       pasangJam(2 * 60000, 'diam'); // kalau 2 menit tidak ada kiriman sama sekali, anggap putus
-      const { value, done } = await baca.read(); if (done) break;
+      const { value, done } = await baca.read(); if (done) break; DENYUT = Date.now(); // tanda Google masih mengirim
       sisa += dek.decode(value, { stream: true });
       const baris = sisa.split('\n'); sisa = baris.pop();
       for (const b of baris) {
@@ -291,7 +291,7 @@ async function calonModel() {
 }
 async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan (teks saja), tanpa mode berpikir dan jawaban dibatasi // kirim ke AI, terima ringkasan berbentuk data
   let pikir = cepat ? null : { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
-  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: cepat ? 16000 : 32768, temperature: 0.2, ...(pikir ? { thinkingConfig: pikir } : {}) } });
+  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 32768, temperature: 0.2, ...(pikir ? { thinkingConfig: pikir } : {}) } });
   const tunggu = d => new Promise(s => setTimeout(s, d));
   const calon = await calonModel(), gagal = [];
   for (let putaran = 0; putaran < 2; putaran++) for (const m of calon) { // putaran kedua: semua model dicoba lagi setelah jeda
@@ -299,7 +299,7 @@ async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan 
     if (putaran) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Semua model sibuk. Menunggu 30 detik lalu mencoba lagi.'); await tunggu(30000); }
     for (let coba = 0; coba < 1 + !putaran; coba++) {
       try {
-        const teks = await mintaRingkasan(m, body(), maju, cepat ? 60000 : 80000);
+        const teks = await mintaRingkasan(m, body(), maju, cepat ? 90000 : 90000);
         let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
         if (!o) { const x = new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.'); x.status = 'panjang'; throw x; }
         S0.modelJalan = m; // model yang berhasil dicoba duluan untuk bagian berikutnya
@@ -751,11 +751,22 @@ R.proses = () => {
     <div class="lbl" id="pLbl">Mengirim rekaman…</div>
     <div class="sub" id="pSub">Jangan tutup aplikasi dulu, ya.</div>
     <div class="bar"><div id="pBar" class="c-coral"></div></div>
+    <div class="hidup ok" id="pHidup" role="status">Sudah berjalan 0 detik</div>
     <div id="pAksi"></div></section>
   <p class="hint" style="text-align:center">${esc(namaJenis(JOB.jenis))} · ${esc(JOB.nama)}${JOB.durasi ? ' · ' + esc(durasiTeks(JOB.durasi)) : ''}</p>`;
-  prosesJalan();
+  mulaiHidup(); prosesJalan();
 };
-let lamaT;
+let lamaT, DENYUT = 0, jamHidup;
+function mulaiHidup() { // jam berjalan + kabar terakhir dari Google, supaya jelas aplikasi tidak macet
+  const t0 = Date.now(); DENYUT = 0; clearInterval(jamHidup);
+  jamHidup = setInterval(() => {
+    const el = $('#pHidup'); if (!el) return clearInterval(jamHidup);
+    const dt = s => s < 60 ? s + ' detik' : Math.floor(s / 60) + ' menit ' + (s % 60) + ' detik', jalan = Math.round((Date.now() - t0) / 1000), diam = DENYUT ? Math.round((Date.now() - DENYUT) / 1000) : null;
+    const ok = diam === null || diam < 45;
+    el.className = 'hidup ' + (ok ? 'ok' : 'lama');
+    el.textContent = `Sudah berjalan ${dt(jalan)} · ` + (diam === null ? 'menunggu Google membaca…' : diam < 5 ? 'Google sedang mengirim jawaban' : ok ? `kabar terakhir ${dt(diam)} lalu` : `Google belum mengirim kabar ${dt(diam)}. Tetap tunggu, kalau 2 menit diam aplikasi otomatis mencoba lagi.`);
+  }, 1000);
+}
 function setTahap(teks, persen, sub) {
   const l = $('#pLbl'); if (!l) return;
   l.textContent = teks; if (persen != null) $('#pBar').style.width = Math.round(persen) + '%';
@@ -815,9 +826,9 @@ async function prosesJalan() {
     console.error(e); clearTimeout(lamaT); removeEventListener('beforeunload', jagaTutup);
     const pesan = e instanceof GagalAI ? e.message : (e?.name === 'QuotaExceededError' ? 'Memori HP penuh. Hapus beberapa data dulu.' : 'Gagal memproses. Coba lagi.');
     const sudah = (j.bagian || []).filter(p => p.hasil).length;
-    $('#pLbl').textContent = 'Belum berhasil'; $('#pSub').textContent = pesan + (sudah ? ` ${sudah} bagian sudah selesai dan tidak perlu diulang.` : '');
+    clearInterval(jamHidup); if ($('#pHidup')) $('#pHidup').hidden = true; $('#pLbl').textContent = 'Belum berhasil'; $('#pSub').textContent = pesan + (sudah ? ` ${sudah} bagian sudah selesai dan tidak perlu diulang.` : '');
     $('#pAksi').innerHTML = `<div class="dua" style="margin-top:14px"><button class="btn clay" id="pBatal">Batal</button><button class="btn utama i3 c-coral" id="pUlang"><span>Coba lagi</span></button></div>`;
-    $('#pUlang').onclick = () => { $('#pAksi').innerHTML = ''; prosesJalan(); };
+    $('#pUlang').onclick = () => { $('#pAksi').innerHTML = ''; if ($('#pHidup')) $('#pHidup').hidden = false; mulaiHidup(); prosesJalan(); };
     $('#pBatal').onclick = () => { (j.bagian || []).forEach(p => hapusFileGemini(p.file?.name)); JOB = null; buka('#/'); };
   }
 }

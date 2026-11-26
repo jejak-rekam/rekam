@@ -1,6 +1,6 @@
 // Jejak service worker: hanya menyimpan file tampilan. Permintaan ke Google Gemini tidak pernah disimpan.
-const VERSI = 'jejak-v23';
-const FILE = ['./', './index.html', './stylesheet.css?v=1.5.4', './javascript.js?v=1.5.4', './manifest.webmanifest', './ippo.webp', './ippo-doa.webp', './ippo-alkitab.webp', './ippo-meeting.webp', './ippo-kelas.webp', './ippo-lainnya.webp', './wa.svg', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable.png'];
+const VERSI = 'jejak-v24';
+const FILE = ['./', './index.html', './stylesheet.css?v=1.5.5', './javascript.js?v=1.5.5', './manifest.webmanifest', './ippo.webp', './ippo-doa.webp', './ippo-alkitab.webp', './ippo-meeting.webp', './ippo-kelas.webp', './ippo-lainnya.webp', './wa.svg', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSI).then(c => c.addAll(FILE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSI).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
