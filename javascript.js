@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.5.2',
+  VERSI: '1.5.3',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -323,9 +323,9 @@ const maju = (lo, hi, label = '') => (n, blok) => { // bar kemajuan mengikuti ja
   setTahap(label + 'Menulis kartu…', Math.min(hi, lo + (hi - lo) * (0.4 + 0.6 * Math.min(1, n / 5000))), 'Jawaban sedang diterima. Jangan tutup aplikasi.');
 };
 const rangkumFoto = (data, j, mj) => mintaJSON([...data.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })), { text: buatPrompt({ ...j, potongan: null }, 'foto', data.length) }], mj);
-const kecilkanFoto = f => new Promise((ok, no) => { // foto dikecilkan di HP (sisi terpanjang 1600 px) supaya cepat & hemat kuota
+const kecilkanFoto = f => new Promise((ok, no) => { // foto dikecilkan di HP (sisi terpanjang 1280 px) supaya cepat & hemat kuota
   const u = URL.createObjectURL(f), im = new Image();
-  im.onload = () => { const s = Math.min(1, 1600 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => b ? ok(b) : no(), 'image/jpeg', 0.82); };
+  im.onload = () => { const s = Math.min(1, 1280 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => b ? ok(b) : no(), 'image/jpeg', 0.72); };
   im.onerror = () => { URL.revokeObjectURL(u); no(new Error('foto rusak')); }; im.src = u;
 });
 const keBase64 = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(b); });
@@ -556,8 +556,18 @@ R.tugas = q => {
 function barisTugas(t, m, denganNama) {
   const o = orangById(m.orangId);
   const ket = [t.siapa, t.kapan, denganNama && o ? 'meeting ' + o.nama : ''].filter(Boolean).join(' · ');
-  return `<div class="tg ${t.selesai ? 'done' : ''}"><button class="centang ${t.selesai ? 'i3 c-sage' : ''}" data-tugas="${esc(m.id)}|${esc(t.id)}" aria-pressed="${t.selesai}" aria-label="${t.selesai ? 'Tandai belum selesai' : 'Tandai selesai'}: ${esc(t.apa)}">${t.selesai ? svg('centang') : ''}</button><span class="tx">${esc(t.apa)}${ket ? `<small>${esc(ket)}</small>` : ''}</span>${!t.selesai && t.kapan ? `<span class="pill oren">${esc(t.kapan)}</span>` : ''}</div>`;
+  return `<div class="tg ${t.selesai ? 'done' : ''}"><button class="centang ${t.selesai ? 'i3 c-sage' : ''}" data-tugas="${esc(m.id)}|${esc(t.id)}" aria-pressed="${t.selesai}" aria-label="${t.selesai ? 'Tandai belum selesai' : 'Tandai selesai'}: ${esc(t.apa)}">${t.selesai ? svg('centang') : ''}</button><span class="tx">${esc(t.apa)}${ket ? `<small>${esc(ket)}</small>` : ''}</span>${!t.selesai && t.kapan ? `<span class="pill oren">${esc(t.kapan)}</span>` : ''}<button class="hapus-tg" data-hapustugas="${esc(m.id)}|${esc(t.id)}" aria-label="Hapus tugas: ${esc(t.apa)}">×</button></div>`;
 }
+document.addEventListener('click', async e => { // hapus satu tugas saja (meeting tetap ada)
+  const b = e.target.closest('[data-hapustugas]'); if (!b || b.disabled) return;
+  const [mid, tid] = b.dataset.hapustugas.split('|'); const m = S0.meeting.find(x => x.id === mid); const t = m?.hasil.tugas.find(x => x.id === tid); if (!t) return;
+  if (!confirm(`Hapus tugas "${t.apa}"?`)) return;
+  b.disabled = true; b.textContent = '…';
+  const baru = { ...m, hasil: { ...m.hasil, tugas: m.hasil.tugas.filter(x => x.id !== tid) } };
+  try { await DB.put('meeting', baru); } catch { b.disabled = false; b.textContent = '×'; return toast('Gagal menghapus. Coba lagi.'); }
+  Object.assign(m, baru); perbaruiLencana(); b.closest('.tg').remove(); toast('Tugas dihapus');
+  if (location.hash.startsWith('#/tugas') && !document.querySelector('.tg')) jalan();
+});
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-tugas]'); if (!b || b.disabled) return;
   const [mid, tid] = b.dataset.tugas.split('|'); const m = S0.meeting.find(x => x.id === mid); const t = m?.hasil.tugas.find(x => x.id === tid); if (!t) return;
@@ -759,8 +769,17 @@ async function prosesJalan() {
       const bag = []; let mulai = 0;
       for (const s of j.sumber) for (const p of await potongRekaman(s)) { bag.push({ ...p, mulai, file: null, hasil: null }); mulai += p.durasi || 0; }
       for (const f of j.pdf || []) bag.push({ blob: f, mime: 'application/pdf', pdf: true, file: null, hasil: null });
-      for (let i = 0; i < (j.foto || []).length; i += 20) bag.push({ foto: j.foto.slice(i, i + 20), hasil: null }); // foto dikirim per 20
+      for (let i = 0; i < (j.foto || []).length; i += 6) bag.push({ foto: j.foto.slice(i, i + 6), hasil: null }); // foto dikirim per 6, dibaca 3 kiriman sekaligus (lebih cepat)
       j.bagian = bag;
+    }
+    const fb = j.bagian.filter(p => p.foto && !p.hasil);
+    if (fb.length) { // kumpulan foto dibaca bersamaan, maksimal 3 sekaligus
+      let sel = 0; const total = fb.length, info = () => setTahap(`Membaca foto: ${sel} dari ${total} kumpulan selesai…`, 3 + 40 * sel / total);
+      info(); const antre = [...fb], galat = [];
+      await Promise.all(Array.from({ length: Math.min(3, total) }, async () => { for (let p; (p = antre.shift());) {
+        try { p.hasil = await rangkumFoto(await Promise.all(p.foto.map(keBase64)), j, () => {}); p.foto = null; sel++; info(); } catch (e) { galat.push(e); }
+      } }));
+      if (galat.length) throw galat[0]; // yang sudah selesai tetap tersimpan, Coba lagi hanya mengulang yang gagal
     }
     const N = j.bagian.length, lebar = (N > 1 ? 82 : 92) / N;
     for (let k = 0; k < N; k++) {
