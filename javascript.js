@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.5.6',
+  VERSI: '1.6.0',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -132,9 +132,9 @@ const DB = (() => {
 /* Salinan di memori supaya cepat; diperbarui setiap ada perubahan */
 const S0 = { orang: [], meeting: [], kunci: '', model: CONFIG.MODEL };
 async function muatData() {
-  const [o, m, k, md] = await Promise.all([DB.all('orang'), DB.all('meeting'), DB.get('setelan', 'kunci'), DB.get('setelan', 'model')]);
+  const [o, m, k, md, pu] = await Promise.all([DB.all('orang'), DB.all('meeting'), DB.get('setelan', 'kunci'), DB.get('setelan', 'model'), DB.get('setelan', 'periksa')]);
   S0.orang = o; S0.meeting = m.sort((a, b) => b.tanggal - a.tanggal);
-  S0.kunci = k?.v || ''; S0.model = md?.v || CONFIG.MODEL;
+  S0.kunci = k?.v || ''; S0.model = md?.v || CONFIG.MODEL; S0.periksa = pu ? pu.v !== false : true;
 }
 const orangById = id => S0.orang.find(o => o.id === id);
 const meetingOrang = id => S0.meeting.filter(m => m.orangId === id);
@@ -289,9 +289,9 @@ async function calonModel() {
   }
   return [...new Set([S0.modelJalan, S0.model, ...daftarModel, CONFIG.MODEL_CADANGAN])].filter(m => m && !PENUH.has(m)).slice(0, 8);
 }
-async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan (teks saja), tanpa mode berpikir dan jawaban dibatasi // kirim ke AI, terima ringkasan berbentuk data
+async function mintaJSON(isi, maju, cepat = false, skema = SKEMA, olah = rapikan) { // cepat: untuk menyatukan (teks saja), tanpa mode berpikir dan jawaban dibatasi // kirim ke AI, terima ringkasan berbentuk data
   let pikir = cepat ? null : { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
-  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: 32768, temperature: 0.2, ...(pikir ? { thinkingConfig: pikir } : {}) } });
+  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: skema, maxOutputTokens: 32768, temperature: 0.2, ...(pikir ? { thinkingConfig: pikir } : {}) } });
   const tunggu = d => new Promise(s => setTimeout(s, d));
   const calon = await calonModel(), gagal = [];
   for (let putaran = 0; putaran < 2; putaran++) for (const m of calon) { // putaran kedua: semua model dicoba lagi setelah jeda
@@ -303,7 +303,7 @@ async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan 
         let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
         if (!o) { const x = new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.'); x.status = 'panjang'; throw x; }
         S0.modelJalan = m; // model yang berhasil dicoba duluan untuk bagian berikutnya
-        return rapikan(o);
+        return olah(o);
       } catch (e) {
         galat = e;
         if (e.status === 400 && pikir && /think/i.test(e.detail || '')) { pikir = null; coba--; continue; } // model ini tidak mendukung pengaturan berpikir
@@ -365,6 +365,39 @@ function tetapLengkap(h, list) { // angka/tabel & syarat dari semua bagian dijej
   const seksi = (h.seksi || []).flatMap(s => { if (!TETAP(s)) return [s]; const l = cari(s); if (!l || pakai.has(l)) return []; pakai.add(l); return [l]; }); // urutan tetap seperti susunan AI
   seksi.unshift(...lokal.filter(l => !pakai.has(l)));
   return { ...h, seksi };
+}
+/* Periksa ulang: AI mencocokkan hasilnya sendiri dengan foto/PDF asli. Hanya mengirim daftar koreksi; nilai angka dikunci. */
+const SKEMA_CEK = O({ koreksi: A(O({ id: STR, label: STR, teks: STR, hapus: { type: 'BOOLEAN' } }, ['id'])), tambah: A(O({ bagian: STR, label: STR, teks: STR }, ['bagian', 'teks'])) });
+async function periksaUlang(sumber, h, j) {
+  const sk = seksiDari(h), daftar = [`J | judul | ${h.judul}`, `I | inti | ${h.inti}`, ...h.poin.map((p, i) => `P${i} | poin | ${p.judul}: ${p.isi}`)];
+  sk.forEach((s, si) => s.bentuk !== 'ayat' && s.isi.forEach((x, xi) => daftar.push(s.bentuk === 'angka' ? `S${si}.${xi} | ${s.judul} (ANGKA: nilai dikunci, hanya nama baris boleh dikoreksi) | nama: ${x.label}` : `S${si}.${xi} | ${s.judul} | ${x.label ? x.label + ': ' : ''}${x.teks}`)));
+  const prompt = `Kamu pemeriksa yang teliti. Di atas adalah materi asli. Di bawah adalah hasil ringkasan materi itu, satu item per baris (id | bagian | isi).
+Cocokkan SETIAP item dengan materi asli, lalu kembalikan HANYA koreksi untuk item yang salah:
+- nama/label/judul baris yang salah atau tertukar (mis. nama tabel salah),
+- kalimat yang tidak sesuai materi (kata diganti, makna bergeser, mis. "cashback" padahal "bebas biaya"),
+- kalimat atau arti istilah yang TIDAK ADA di materi (karangan) -> hapus: true.
+Untuk item ANGKA: hanya boleh mengganti label (nama baris), jangan mengisi teks.
+tambah: baris tabel atau syarat di materi yang belum ada sama sekali di ringkasan (bagian = judul bagian yang cocok).
+Jangan mengoreksi gaya bahasa. Kalau semua sudah benar, kembalikan daftar kosong. Bahasa Indonesia.
+
+RINGKASAN:
+${daftar.join('\n')}`;
+  const k = await mintaJSON([...sumber, { text: prompt }], () => {}, false, SKEMA_CEK, o => o);
+  return terapkanKoreksi(h, k);
+}
+function terapkanKoreksi(h, k) {
+  const sk = seksiDari(h).map(s => ({ ...s, isi: s.isi.map(x => ({ ...x })) })), poin = h.poin.map(p => ({ ...p })), hp = new Set();
+  let judul = h.judul, inti = h.inti;
+  for (const c of (k?.koreksi || []).slice(0, 60)) {
+    const id = String(c.id || '').trim(), teks = potong(c.teks, 400), label = potong(c.label, 80);
+    if (id === 'J' && teks) judul = potong(teks, 80); else if (id === 'I' && teks) inti = potong(teks, 220);
+    else if (/^P\d+$/.test(id) && poin[+id.slice(1)]) { if (c.hapus) hp.add(id); else if (teks) { const [a, ...b] = teks.split(':'); poin[+id.slice(1)].isi = potong(b.length ? b.join(':').trim() : teks, 320); if (b.length) poin[+id.slice(1)].judul = potong(a, 60); } }
+    else { const m = /^S(\d+)\.(\d+)$/.exec(id), s = m && sk[+m[1]], x = s && s.isi[+m[2]]; if (!x) continue;
+      if (s.bentuk === 'angka') { if (label) x.label = label; continue; } // nilai angka tidak pernah diubah
+      if (c.hapus) x.hapus = true; else { if (teks) x.teks = teks; if (label) x.label = label; } }
+  }
+  for (const t of (k?.tambah || []).slice(0, 40)) { if (!t.teks) continue; const s = sk.find(s => s.judul.toLowerCase() === String(t.bagian).toLowerCase()) || sk.find(s => s.bentuk === 'angka' && t.label); if (s) s.isi.push({ label: potong(t.label, 80), teks: potong(t.teks, 400), ket: '' }); }
+  return { ...h, judul, inti, poin: poin.filter((_, i) => !hp.has('P' + i)), seksi: sk.map(s => ({ ...s, isi: s.isi.filter(x => !x.hapus) })).filter(s => s.isi.length) };
 }
 function gabungLokal(list) { // cadangan kalau AI gagal menyatukan: gabungkan semua bagian apa adanya tanpa dobel
   const unik = (xs, k) => { const s = new Set(); return xs.filter(x => { const v = k(x).toLowerCase().trim(); return v && !s.has(v) && s.add(v); }); };
@@ -479,6 +512,7 @@ async function potongM4a(b) {
 const R = {};
 function buka(h) { location.hash = h; }
 async function jalan() {
+  $('#app').classList.remove('mode-ubah'); $('#app').onclick = null; document.querySelector('.lembar-bg')?.remove(); if (!location.hash.startsWith('#/m/')) UBAH = null;
   const [path, qs] = (location.hash.slice(1) || '/').split('?');
   const p = path.split('/').filter(Boolean), q = new URLSearchParams(qs);
   const tab = p[0] === 'orang' ? 'orang' : p[0] === 'tugas' ? 'tugas' : p[0] === 'atur' ? 'atur' : (!p[0] ? 'beranda' : '');
@@ -801,10 +835,10 @@ async function prosesJalan() {
     }
     const fb = j.bagian.filter(p => p.foto && !p.hasil);
     if (fb.length) { // kumpulan foto dibaca bersamaan, maksimal 3 sekaligus
-      let sel = 0; const total = fb.length, info = () => setTahap(`Membaca foto: ${sel} dari ${total} kumpulan selesai…`, 3 + 40 * sel / total);
+      let sel = 0, cek = 0; const total = fb.length, info = () => setTahap(`Membaca foto: ${sel} dari ${total} kumpulan selesai…`, 3 + 40 * sel / total, cek ? `Memeriksa ulang hasil (${cek} kumpulan)… Jangan tutup aplikasi.` : '');
       info(); const antre = [...fb], galat = [];
       await Promise.all(Array.from({ length: Math.min(3, total) }, async () => { for (let p; (p = antre.shift());) {
-        try { p.hasil = await rangkumFoto(await Promise.all(p.foto.map(keBase64)), j, () => {}); p.foto = null; sel++; info(); } catch (e) { galat.push(e); }
+        try { const data = await Promise.all(p.foto.map(keBase64)); p.hasil = await rangkumFoto(data, j, () => {}); if (S0.periksa) { cek++; info(); p.hasil = await periksaUlang(data.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })), p.hasil, j).catch(() => p.hasil); cek--; } p.foto = null; sel++; info(); } catch (e) { galat.push(e); }
       } }));
       if (galat.length) throw galat[0]; // yang sudah selesai tetap tersimpan, Coba lagi hanya mengulang yang gagal
     }
@@ -817,6 +851,7 @@ async function prosesJalan() {
         if (!p.file) { setTahap(label + 'Mengirim PDF…', lo); p.file = await unggahKeGemini(p.blob, p.mime, f => setTahap(`${label}Mengirim PDF… ${Math.round(f * 100)}%`, lo + f * lebar * 0.4)); }
         setTahap(label + 'Membaca PDF…', lo + lebar * 0.45);
         p.hasil = await rangkum(p.file, { ...j, potongan: null }, maju(lo + lebar * 0.5, lo + lebar, label), 'pdf');
+        if (S0.periksa) { setTahap(label + 'Memeriksa ulang hasil PDF…', lo + lebar * 0.9); p.hasil = await periksaUlang([{ file_data: { mime_type: p.file.mimeType, file_uri: p.file.uri } }], p.hasil, j).catch(() => p.hasil); }
         hapusFileGemini(p.file.name); p.file = null; p.blob = null; continue;
       }
       if (!p.file) { setTahap(label + 'Mengirim rekaman…', lo); p.file = await unggahKeGemini(p.blob, p.mime, f => setTahap(`${label}Mengirim rekaman… ${Math.round(f * 100)}%`, lo + f * lebar * 0.4)); }
@@ -861,27 +896,69 @@ function seksiHtml(s, n) { // satu bagian di halaman hasil, tampilannya mengikut
     ayat: () => `<div class="sx-ayat"><b>${e(x.label)}</b>${x.ket ? `<span class="pill ${/dibaca/i.test(x.ket) ? 'ijo' : 'kuning'}">${e(x.ket)}</span>` : ''}<p>${e(x.teks)}</p></div>`,
     istilah: () => `<div class="sx-istilah"><b>${e(x.label)}</b><span>${e(x.teks)}</span></div>`,
     pesan: () => `<div class="sx-pesan">${e(x.teks)}</div><button class="btn clay" data-salin="${e(x.teks)}" style="width:100%;margin-top:10px">${svg('kirim', '#4A3428')}<span>Salin pesan</span></button>`
-  }[s.bentuk] || (() => ''))()).join('');
+  }[s.bentuk] || (() => ''))().replace(/^<(\w+)/, `<$1 data-ub="S${n}.${i}"`)).join('');
   return `<section class="kotak clay${s.bentuk === 'belum' ? ' sx-belum' : ''}"><div class="sek-h"><span class="i3 ic c-${c}">${svg(ik, '#fff', HEX[c])}</span><h3>${e(s.judul)}</h3></div><div class="${s.bentuk === 'angka' ? 'sx-grid' : ''}">${isi}</div></section>`;
+}
+let UBAH = null; // id meeting yang sedang dalam mode ubah
+function pasangUbah(m) {
+  const app = $('#app'), nyala = on => { UBAH = on ? m.id : null; app.classList.toggle('mode-ubah', on); $('#ubahBar').hidden = !on; $('#bUbah').setAttribute('aria-pressed', on); };
+  nyala(UBAH === m.id);
+  $('#bUbah').onclick = () => { nyala(UBAH !== m.id); if (UBAH) toast('Ketuk tulisan yang mau diubah'); };
+  $('#bUbahSelesai').onclick = () => nyala(false);
+  app.onclick = e => { if (UBAH !== m.id) return; const el = e.target.closest('[data-ub]'); if (!el) return; e.preventDefault(); e.stopPropagation(); bukaUbah(m, el.dataset.ub); };
+}
+function bukaUbah(m, id) { // lembar ubah satu baris
+  const h = m.hasil, sk = seksiDari(h), ms = /^S(\d+)\.(\d+)$/.exec(id), s = ms && sk[+ms[1]], x = s && s.isi[+ms[2]], p = /^P\d+$/.test(id) && h.poin[+id.slice(1)];
+  const awal = id === 'J' ? { isi: h.judul, judulIsi: 'Judul rangkuman' } : id === 'I' ? { isi: h.inti, judulIsi: 'Kalimat inti' } : id === 'T' ? { isi: h.penutup, judulIsi: 'Langkah berikutnya' } : p ? { nama: p.judul, isi: p.isi, judulNama: 'Judul poin' } : x ? { nama: x.label, isi: x.teks, judulNama: 'Nama', bisaNama: x.label || ['angka', 'linimasa', 'ayat', 'istilah'].includes(s.bentuk) } : null;
+  if (!awal) return;
+  const adaNama = p || (x && awal.bisaNama), bolehHapus = p || x || id === 'T';
+  const w = document.createElement('div'); w.className = 'lembar-bg';
+  w.innerHTML = `<div class="lembar" role="dialog" aria-modal="true" aria-label="Ubah tulisan"><div class="pegangan"></div><b style="font-size:16px">${x ? esc(s.judul) : 'Ubah tulisan'}</b>
+    ${adaNama ? `<label class="lb" for="ubNama">${esc(awal.judulNama)}</label><input class="in" id="ubNama" maxlength="80" value="${esc(awal.nama || '')}">` : ''}
+    <label class="lb" for="ubIsi">${esc(awal.judulIsi || 'Isi')}</label><textarea class="in" id="ubIsi" rows="4" maxlength="${id === 'J' ? 80 : 400}">${esc(awal.isi || '')}</textarea>
+    <div class="err" id="ubErr" hidden></div>
+    <div class="dua"><button class="btn clay" id="ubBatal"><span>Batal</span></button><button class="btn utama i3 c-sage" id="ubSimpan"><span>Simpan</span></button></div>
+    ${bolehHapus ? `<button class="link" id="ubHapus" style="color:#A8331A;width:100%">Hapus baris ini</button>` : ''}</div>`;
+  document.body.append(w); setTimeout(() => $('#ubIsi').focus(), 50);
+  const tutup = () => w.remove();
+  w.onclick = e => { if (e.target === w) tutup(); }; $('#ubBatal').onclick = tutup;
+  const simpan = async (btn, hapus) => {
+    const isi = $('#ubIsi').value.trim().replace(/\s+\n/g, '\n'), nama = adaNama ? $('#ubNama').value.trim() : '';
+    if (!hapus && !isi) { $('#ubErr').textContent = 'Isinya tidak boleh kosong.'; $('#ubErr').hidden = false; return; }
+    if (hapus && !confirm('Hapus baris ini?')) return;
+    const baru = { ...h, poin: h.poin.map(q => ({ ...q })), seksi: sk.map(t => ({ ...t, isi: t.isi.map(y => ({ ...y })) })) };
+    if (id === 'J') baru.judul = isi; else if (id === 'I') baru.inti = isi; else if (id === 'T') baru.penutup = hapus ? '' : isi;
+    else if (p) { const i = +id.slice(1); if (hapus) baru.poin.splice(i, 1); else Object.assign(baru.poin[i], { judul: nama || p.judul, isi }); }
+    else { const t = baru.seksi[+ms[1]]; if (hapus) t.isi.splice(+ms[2], 1); else Object.assign(t.isi[+ms[2]], { teks: isi, label: nama }); baru.seksi = baru.seksi.filter(t => t.isi.length); }
+    await tombolProses(btn, 'Menyimpan…', async () => {
+      const mb = { ...m, hasil: baru };
+      try { await DB.put('meeting', mb); } catch { return toast('Gagal menyimpan. Coba lagi.'); }
+      Object.assign(m, mb); tutup(); R.hasil(encodeURIComponent(m.id)); toast(hapus ? 'Baris dihapus' : 'Tersimpan. Gambar WA ikut berubah.');
+    });
+  };
+  $('#ubSimpan').onclick = e => simpan(e.currentTarget, false);
+  if ($('#ubHapus')) $('#ubHapus').onclick = e => simpan(e.currentTarget, true);
 }
 R.hasil = id => {
   const m = S0.meeting.find(x => x.id === decodeURIComponent(id)); if (!m) return buka('#/');
   const h = m.hasil, o = orangById(m.orangId) || { nama: '?' };
   const iBag = b => Math.max(0, h.bagian.indexOf(b));
   const TM = temaDari(m);
-  const kartu = (p, i) => { const c = WARNA[i % 5]; return `<article class="k1 clay p-${c}" data-bag="${iBag(p.bagian)}"><span class="tag t-${c}">${esc(p.bagian || h.bagian[0])}</span><div class="hd"><span class="i3 n c-${c}"><span>${i + 1}</span></span><h3>${esc(p.judul)}</h3></div><p class="t-${c}">${esc(p.isi)}</p>${TM.ikon ? `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${TM.ikon[i % TM.ikon.length]}</svg>` : ill(p.ikon)}</article>`; };
+  const kartu = (p, i) => { const c = WARNA[i % 5]; return `<article class="k1 clay p-${c}" data-ub="P${i}" data-bag="${iBag(p.bagian)}"><span class="tag t-${c}">${esc(p.bagian || h.bagian[0])}</span><div class="hd"><span class="i3 n c-${c}"><span>${i + 1}</span></span><h3>${esc(p.judul)}</h3></div><p class="t-${c}">${esc(p.isi)}</p>${TM.ikon ? `<svg class="ill" viewBox="0 0 70 56" aria-hidden="true">${TM.ikon[i % TM.ikon.length]}</svg>` : ill(p.ikon)}</article>`; };
   $('#app').innerHTML = `
-  <div class="top"><button class="btn-ikon clay" data-back aria-label="Kembali">${svg('back', '#4A3428')}</button><span class="pill clay" style="background:var(--card);color:var(--ink);font-weight:800">${esc(o.nama)} · ${esc(tglPendek(m.tanggal))}${m.durasi ? ' · ' + esc(durasiTeks(m.durasi)) : ''}</span></div>
+  <div class="top"><button class="btn-ikon clay" data-back aria-label="Kembali">${svg('back', '#4A3428')}</button><span class="pill clay" style="background:var(--card);color:var(--ink);font-weight:800;flex:1;text-align:center">${esc(o.nama)} · ${esc(tglPendek(m.tanggal))}${m.durasi ? ' · ' + esc(durasiTeks(m.durasi)) : ''}</span><button class="btn-ikon clay" id="bUbah" aria-label="Ubah isi rangkuman" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#4A3428" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button></div>
+  <div class="ubah-bar" id="ubahBar" hidden><span>Ketuk tulisan yang mau diubah</span><button class="chip on i3 c-sage" id="bUbahSelesai"><span>Selesai</span></button></div>
   <section class="poster tm clay" style="${esc(gayaTema(TM))}">
-    <div class="kepala"><img src="./${TM.app}.webp" alt=""><div class="isi"><small class="k">${esc(TM.k)}</small><h2>${esc(h.judul)}</h2><p class="inti">${esc(h.inti)}</p></div></div>
+    <div class="kepala"><img src="./${TM.app}.webp" alt=""><div class="isi"><small class="k">${esc(TM.k)}</small><h2 data-ub="J">${esc(h.judul)}</h2><p class="inti" data-ub="I">${esc(h.inti)}</p></div></div>
     ${h.bagian.length > 1 ? `<div class="filter" role="group" aria-label="Saring per bagian"><button class="chip on i3 c-sage" data-f="-1"><span>Semua</span></button>${h.bagian.map((b, i) => `<button class="chip clay" data-f="${i}">${i + 1} · ${esc(b)}</button>`).join('')}</div>` : ''}
     <div class="kartu">${h.poin.map(kartu).join('') || '<p class="kosong">Tidak ada poin penting.</p>'}</div>
-    ${h.penutup ? `<div class="pita clay">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
+    ${h.penutup ? `<div class="pita clay" data-ub="T">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
   </section>
   ${h.tugas.length ? `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('tugas', '#fff', '#E0A532')}</span><h3>Tugas</h3></div>${h.tugas.map(t => barisTugas(t, m, false)).join('')}</section>` : ''}
   ${seksiDari(h).map(seksiHtml).join('')}
   <div class="dua"><button class="btn clay" id="bSimpan">${svg('unduh', '#4A3428')}<span>Simpan gambar</span></button><button class="btn utama i3 c-coral" id="bKirim"><img class="wa" src="./wa.svg" alt=""><span>Kirim ke WA</span></button></div>
   <button class="link" id="bHapus" style="color:#A8331A">Hapus meeting ini</button>`;
+  pasangUbah(m);
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     const f = +b.dataset.f;
     document.querySelectorAll('[data-f]').forEach(x => { const on = x === b; x.className = 'chip ' + (on ? 'on i3 c-sage' : 'clay'); x.innerHTML = on ? `<span>${esc(x.textContent)}</span>` : esc(x.textContent); });
@@ -1023,6 +1100,7 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
 
 /* ---- Atur ---- */
 R.atur = () => {
+  setTimeout(() => { const c = $('#cekPeriksa'); if (c) c.onchange = async () => { c.disabled = true; try { await DB.put('setelan', { k: 'periksa', v: c.checked }); S0.periksa = c.checked; toast(c.checked ? 'Periksa ulang dinyalakan' : 'Periksa ulang dimatikan'); } catch { c.checked = !c.checked; toast('Gagal menyimpan. Coba lagi.'); } c.disabled = false; }; });
   const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
   $('#app').innerHTML = `<div class="top"><h1>Atur</h1></div>
   <section class="kotak clay">
@@ -1036,6 +1114,9 @@ R.atur = () => {
     <button class="btn utama i3 c-coral" id="bKunci" style="width:100%"><span>Simpan</span></button>
     <button class="btn clay" id="bCekModel" style="width:100%;margin-top:10px"><span>Cek model</span></button>
     <div id="hasilCek"></div>
+  </section>
+  <section class="kotak clay">
+    <label style="display:flex;gap:12px;align-items:center;cursor:pointer"><input type="checkbox" id="cekPeriksa" ${S0.periksa ? 'checked' : ''} style="width:22px;height:22px;accent-color:#3F6B45"><span style="flex:1"><b style="font-size:15px">Periksa ulang otomatis</b><small style="display:block;font-size:12px;font-weight:700;color:var(--sub)">Untuk foto & PDF. AI mencocokkan lagi hasilnya dengan materi asli. Sedikit lebih lama.</small></span></label>
   </section>
   <section class="kotak clay">
     <div class="sek-h"><span class="i3 ic c-sage">${svg('unduh')}</span><h3>Cadangan data</h3></div>
