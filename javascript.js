@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.5.1',
+  VERSI: '1.5.2',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -206,10 +206,10 @@ const TEMPLATE = {
     ['Kalimat yang menguatkan', 'kutipan', 'maksimal 3 kalimat pengkhotbah yang paling menguatkan; ket boleh kosong'],
     ['Penerapan minggu ini', 'daftar', 'hal praktis yang bisa dilakukan minggu ini'],
     ['Pertanyaan renungan', 'daftar', 'pertanyaan untuk direnungkan sendiri atau dibahas di komsel']] },
-  kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: true, seksi: [
-    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Isi tabel ditulis per baris (label = nama baris + kolom, mis. "Mass 1-5 th · Primary", teks = nilainya). Jangan dibulatkan atau dilewati. Kosongkan kalau tidak ada angka'],
-    ['Istilah penting', 'istilah', 'HANYA istilah yang dijelaskan di materi; arti ditulis sesuai materi, jangan mengarang arti sendiri. Kosongkan kalau tidak ada'],
-    ['Langkah praktik', 'langkah', 'HANYA langkah yang benar-benar diajarkan di materi, berurutan. Jangan mengarang langkah sendiri. Kosongkan kalau tidak ada'],
+  kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: false, seksi: [
+    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = nama tabel + baris (mis. "Pasti Fixed · Mass 1-5 th"), teks = semua kolomnya dalam satu baris (mis. "Primary 7,40% · Gold 7,75% · Secondary 8,00% · Multiguna 8,25%"). Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Kosongkan kalau tidak ada angka'],
+    ['Istilah penting', 'istilah', 'HANYA istilah yang artinya dijelaskan di materi. label = istilah, teks = artinya sesuai materi (wajib diisi). Istilah yang artinya tidak dijelaskan jangan ditulis'],
+    ['Langkah praktik', 'langkah', 'HANYA kalau materi benar-benar mengajarkan urutan langkah/cara (mis. tutorial "langkah 1, 2, 3"). Daftar produk, syarat, atau info BUKAN langkah. Dilarang menyusun langkah sendiri dari isi materi. Kalau tidak ada, WAJIB daftar kosong'],
     ['Masih belum jelas', 'belum', 'hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka/klaim tanpa dasar, atau yang saling bertentangan. Tulis langsung sebagai kalimat pendek (bukan format celah-tanya). Kosongkan kalau memang tidak ada']] }
 };
 const templateDari = jenis => TEMPLATE[jenis] || null; // jenis lain (diisi sendiri): AI yang menyusun bagian
@@ -238,7 +238,7 @@ Aturan:
 ${sumber !== 'rekaman' ? '- Ini dokumen: poin harus jelas dan lengkap (boleh sampai 12 poin, isi maksimal 30 kata). Semua angka, tanggal, nama, harga, tarif, tenor, dan syarat penting wajib ikut ditulis, jangan diringkas sampai hilang. Bagian "Masih belum jelas" wajib diperiksa sungguh-sungguh.\n' : ''}- judul: topik utama, maksimal 6 kata. inti: 1 kalimat (maksimal 20 kata).
 - bagian: kelompokkan isi menurut topik (1-6 topik, 1-2 kata).
 - poin: poin paling penting. Isi pendek 3-4 poin, sedang 4-6, panjang 6-10. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian. Pilih ikon yang cocok.
-- tugas: ${t && !t.tugas ? 'isi hanya kalau ada tugas yang jelas disebut (siapa mengerjakan apa); kalau tidak ada, daftar kosong.' : 'siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan. Kalau waktunya tidak disebut, kapan = "".'}
+- tugas: ${t && !t.tugas ? 'isi HANYA kalau pembicara jelas memberi tugas/PR (siapa mengerjakan apa). Nomor kontak, ajakan menghubungi, dan info umum BUKAN tugas. Kalau tidak ada, daftar kosong.' : 'siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan. Kalau waktunya tidak disebut, kapan = "".'}
 ${aturanSeksi(jenis)}
 - penutup: hal terpenting berikutnya (langkah berikutnya atau pesan utama), 1 kalimat pendek.${j.potongan ? `\n\nPENTING: rekaman ini adalah bagian ${j.potongan.k} dari ${j.potongan.N} dari SATU acara yang sama, dimulai pada menit ke-${j.potongan.mulai}. Ringkas hanya isi bagian ini. Waktu di linimasa dihitung dari awal acara (tambahkan ${j.potongan.mulai} menit).` : ''}${sumber === 'foto' ? '\n- Untuk waktu di linimasa yang dari foto, pakai nomor foto, misalnya "Foto 1-3".' : ''}`;
 }
@@ -373,7 +373,7 @@ function rapikan(o) { // bersihkan & batasi isi dari AI sebelum disimpan
     bagian: bagian.length ? bagian : ['Umum'],
     poin: arr(o.poin, 12).map(p => ({ bagian: potong(p.bagian, 30), judul: potong(p.judul, 60), isi: potong(p.isi, 320), ikon: ILL[p.ikon] ? p.ikon : 'ide' })).filter(p => p.judul),
     tugas: arr(o.tugas, 25).map(t => ({ id: uid(), apa: potong(t.apa, 200), siapa: potong(t.siapa, 40), kapan: potong(t.kapan, 40), selesai: t.selesai === true })).filter(t => t.apa),
-    seksi: arr(seksiDari(o), 8).map(s => ({ judul: potong(s.judul, 40), bentuk: BENTUK.includes(s.bentuk) ? s.bentuk : 'daftar', isi: arr(s.isi, s.bentuk === 'angka' ? 40 : 15).map(x => ({ teks: potong(x.teks, s.bentuk === 'pesan' ? 1500 : 400), label: potong(x.label, 40), ket: potong(x.ket, 200) })).filter(x => x.teks) })).filter(s => s.judul && s.isi.length)
+    seksi: arr(seksiDari(o), 8).map(s => ({ judul: potong(s.judul, 40), bentuk: BENTUK.includes(s.bentuk) ? s.bentuk : 'daftar', isi: arr(s.isi, s.bentuk === 'angka' ? 40 : 15).map(x => ({ teks: potong(x.teks, s.bentuk === 'pesan' ? 1500 : 400), label: potong(x.label, 80), ket: potong(x.ket, 200) })).filter(x => x.teks && (s.bentuk !== 'istilah' || (x.label && x.label.trim().toLowerCase() !== x.teks.trim().toLowerCase()))) })).filter(s => s.judul && s.isi.length)
   };
 }
 
@@ -924,7 +924,7 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
       if (s.bentuk === 'linimasa') { const t = pl(q.teks, iw - 150, F(30, 900)), k = pl(q.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PA.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis(pl(q.label, 120, F(24, 900)), X0, y + 26, F(24, 900), HX.blue, 28); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }
       if (s.bentuk === 'centang') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: l.length * 38 + 18, g: async y => { try { x.drawImage(await gbr(svg('ok', HX.sage)), X0, y, 40, 40); } catch {} tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
       if (s.bentuk === 'angka' && q.teks.length <= 22) { const vw = iw * 0.36, a = pl(q.label, iw - vw - 16, F(26, 800)), hh = Math.max(1, a.length) * 34 + 14; return { h: hh, g: async y => { x.fillStyle = PA[c]; x.fillRect(X0, y + hh - 4, iw, 2); tulis(a, X0, y + 28, F(26, 800), TK[c], 34); x.textAlign = 'right'; tulis([q.teks], X0 + iw, y + 30, F(28, 900), '#4A3428', 0); x.textAlign = 'left'; } }; } // angka pendek: satu baris (nama kiri, nilai kanan) supaya tabel tidak memanjang
-      if (s.bentuk === 'angka' || s.bentuk === 'istilah') { const a = pl(q.label, iw, F(24, 900)), b = pl(q.teks, iw, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700)), lb = s.bentuk === 'angka' ? 42 : 36; return { h: a.length * 30 + b.length * lb + 26, g: async y => { tulis(a, X0, y + 24, F(24, 900), TK[c], 30); tulis(b, X0, y + 28 + a.length * 30, F(s.bentuk === 'angka' ? 34 : 28, s.bentuk === 'angka' ? 900 : 700), '#4A3428', lb); } }; }
+      if (s.bentuk === 'angka' || s.bentuk === 'istilah') { const a = pl(q.label, iw, F(24, 900)), b = pl(q.teks, iw, F(28, s.bentuk === 'angka' ? 800 : 700)), lb = 36; return { h: a.length * 30 + b.length * lb + 26, g: async y => { tulis(a, X0, y + 24, F(24, 900), TK[c], 30); tulis(b, X0, y + 28 + a.length * 30, F(28, s.bentuk === 'angka' ? 800 : 700), '#4A3428', lb); } }; }
       if (s.bentuk === 'langkah') { const l = pl(q.teks, iw - 70, F(28, 800)); return { h: Math.max(48, l.length * 38) + 16, g: async y => { x.fillStyle = HX.coral; x.beginPath(); x.arc(X0 + 20, y + 20, 20, 0, 7); x.fill(); x.textAlign = 'center'; tulis([String(i + 1)], X0 + 20, y + 29, F(24, 900), '#fff', 0); x.textAlign = 'left'; tulis(l, X0 + 60, y + 30, F(28, 800), '#4A3428', 38); } }; }
       if (s.bentuk === 'kutipan' || s.bentuk === 'ayat') { const top = s.bentuk === 'ayat' ? pl(q.label + (q.ket ? ` (${q.ket})` : ''), iw, F(26, 900)) : [], a = pl(s.bentuk === 'ayat' ? q.teks : `"${q.teks}"`, iw, F(28, s.bentuk === 'ayat' ? 700 : 900)), b = s.bentuk === 'kutipan' ? pl(q.ket, iw, F(26, 700)) : []; return { h: top.length * 34 + a.length * 38 + b.length * 34 + 24, g: async y => { tulis(top, X0, y + 28, F(26, 900), TK[c], 34); tulis(a, X0, y + 30 + top.length * 34, F(28, s.bentuk === 'ayat' ? 700 : 900), '#2F4A3E', 38); tulis(b, X0, y + 30 + top.length * 34 + a.length * 38, F(26, 700), TK[c], 34); } }; }
       const l = pl((s.bentuk === 'pesan' ? '' : '• ') + q.teks, iw - 20, F(28, 800)); return { h: l.length * 38 + 14, g: async y => tulis(l, X0, y + 30, F(28, 800), s.bentuk === 'daftar' ? TK.lilac : s.bentuk === 'belum' ? TK.coral : '#4A3428', 38) };
