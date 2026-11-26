@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.6.1',
+  VERSI: '1.7.0',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -92,6 +92,7 @@ const tglPendek = t => new Date(t).toLocaleDateString('id-ID', { day: 'numeric',
 const durasiTeks = d => { if (!d) return ''; const j = Math.floor(d / 3600), m = Math.round((d % 3600) / 60); return j ? `${j} jam ${m} mnt` : `${Math.max(1, m)} menit`; };
 const kapan = t => { const h = Math.floor((Date.now() - t) / 864e5); return h <= 0 ? 'hari ini' : h === 1 ? 'kemarin' : h < 7 ? `${h} hari lalu` : h < 30 ? `${Math.floor(h / 7)} minggu lalu` : tglPendek(t); };
 const potong = (s, n) => String(s ?? '').trim().slice(0, n);
+const arr = (a, n) => Array.isArray(a) ? a.slice(0, n) : [];
 let toastT;
 function toast(msg, lama = 2600) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, lama); }
 async function tombolProses(btn, teks, fn) { // loading yang jelas di setiap tombol aksi
@@ -207,7 +208,8 @@ const TEMPLATE = {
     ['Penerapan minggu ini', 'daftar', 'hal praktis yang bisa dilakukan minggu ini'],
     ['Pertanyaan renungan', 'daftar', 'pertanyaan untuk direnungkan sendiri atau dibahas di komsel']] },
   kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: false, seksi: [
-    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = JUDUL TABEL PERSIS seperti tertulis di materi (jangan dipotong, kata pembeda seperti "Loyalist", "Syariah", "Promo" wajib ikut) + baris (mis. "Pasti Fixed Nasabah Loyalist · Mass 1-5 th"), teks = semua kolomnya dalam satu baris, SETIAP nilai WAJIB diawali nama kolom SINGKAT maksimal 2 kata (mis. "Plat 7,40% · Gold/TO 7,75% · Sec 8,00% · Multi 8,25%"); kepanjangan nama kolom ditulis SEKALI saja sebagai item pertama tiap tabel (label = nama tabel · Kolom, teks = "Plat = Primary Selected Platinum & Platinum · ..."). Kolom kosong (-) dilewati. Tulis singkat supaya SEMUA tabel muat. Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Maksimal 70 baris; dahulukan semua tabel tarif, tenor maksimal, biaya, plafon, lalu kontak. Kosongkan kalau tidak ada angka'],
+    ['Angka & tabel penting', 'angka', 'angka penting yang BUKAN tabel: biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak (label = nama, teks = nilai). Tabel TIDAK ditulis di sini, tetapi di kolom tabel. Jangan dibulatkan. Kosongkan kalau tidak ada'],
+
     ['Syarat & ketentuan', 'daftar', 'syarat, kriteria, ketentuan, siapa/produk yang berlaku atau TIDAK berlaku, promo dan batasnya, ditulis sesuai materi (satu poin = satu syarat). Angka tetap boleh ditulis di sini kalau bagian dari syarat. Kosongkan kalau tidak ada'],
     ['Istilah penting', 'istilah', 'HANYA istilah yang artinya dijelaskan di materi. label = istilah, teks = artinya sesuai materi (wajib diisi). Istilah yang artinya tidak dijelaskan jangan ditulis'],
     ['Langkah praktik', 'langkah', 'HANYA kalau materi benar-benar mengajarkan urutan langkah/cara (mis. tutorial "langkah 1, 2, 3"). Daftar produk, syarat, atau info BUKAN langkah. Dilarang menyusun langkah sendiri dari isi materi. Kalau tidak ada, WAJIB daftar kosong'],
@@ -220,12 +222,13 @@ const SKEMA = O({
   bagian: A(STR),
   poin: A(O({ bagian: STR, judul: STR, isi: STR, ikon: { type: 'STRING', format: 'enum', enum: Object.keys(ILL) } })),
   tugas: A(O({ apa: STR, siapa: STR, kapan: STR, selesai: { type: 'BOOLEAN' } }, ['apa', 'siapa', 'kapan'])),
-  seksi: A(O({ judul: STR, bentuk: { type: 'STRING', format: 'enum', enum: BENTUK }, isi: A(O({ teks: STR, label: STR, ket: STR }, ['teks'])) }, ['judul', 'bentuk', 'isi']))
+  seksi: A(O({ judul: STR, bentuk: { type: 'STRING', format: 'enum', enum: BENTUK }, isi: A(O({ teks: STR, label: STR, ket: STR }, ['teks'])) }, ['judul', 'bentuk', 'isi'])),
+  tabel: A(O({ judul: STR, kolom: A(STR), baris: A(A(STR)), catatan: STR }, ['judul', 'kolom', 'baris']))
 });
 function aturanSeksi(jenis) {
   const t = templateDari(jenis);
   if (t) return `- seksi: WAJIB berisi bagian-bagian ini, dengan judul dan bentuk persis seperti di bawah dan urutan yang sama. Kalau tidak ada isinya, isi dengan daftar kosong:\n${t.seksi.map(([a, b, c], i) => `  ${i + 1}. judul "${a}", bentuk "${b}": ${c}`).join('\n')}`;
-  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Kalau materi berisi syarat/ketentuan, buat juga bagian "Syarat & ketentuan" bentuk "daftar". Kalau materi berisi angka/tabel/biaya/kontak, bagian pertama WAJIB judul "Angka & tabel penting" bentuk "angka" yang menyalin semua angka itu per baris tanpa dilewati. Jangan mengarang isi bagian mana pun. Bagian terakhir WAJIB judul "Masih belum jelas" bentuk "belum": hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka tanpa dasar, atau saling bertentangan, ditulis langsung sebagai kalimat pendek (kosongkan kalau tidak ada). Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
+  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Tabel di materi ditulis di kolom tabel, bukan di seksi. Kalau materi berisi syarat/ketentuan, buat juga bagian "Syarat & ketentuan" bentuk "daftar". Kalau materi berisi angka/tabel/biaya/kontak, bagian pertama WAJIB judul "Angka & tabel penting" bentuk "angka" yang menyalin semua angka itu per baris tanpa dilewati. Jangan mengarang isi bagian mana pun. Bagian terakhir WAJIB judul "Masih belum jelas" bentuk "belum": hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka tanpa dasar, atau saling bertentangan, ditulis langsung sebagai kalimat pendek (kosongkan kalau tidak ada). Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
 }
 function buatPrompt(j, sumber = 'rekaman', n = 1) {
   const jenis = j.jenis || 'meeting', t = templateDari(jenis);
@@ -241,7 +244,8 @@ ${sumber !== 'rekaman' ? '- Ini dokumen: poin harus jelas dan lengkap (boleh sam
 - poin: poin paling penting. Isi pendek 3-4 poin, sedang 4-6, panjang 6-10. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian. Pilih ikon yang cocok.
 - tugas: ${t && !t.tugas ? 'isi HANYA kalau pembicara jelas memberi tugas/PR (siapa mengerjakan apa). Nomor kontak, ajakan menghubungi, dan info umum BUKAN tugas. Kalau tidak ada, daftar kosong.' : 'siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan. Kalau waktunya tidak disebut, kapan = "".'}
 ${aturanSeksi(jenis)}
-- penutup: hal terpenting berikutnya (langkah berikutnya atau pesan utama), 1 kalimat pendek.${j.potongan ? `\n\nPENTING: rekaman ini adalah bagian ${j.potongan.k} dari ${j.potongan.N} dari SATU acara yang sama, dimulai pada menit ke-${j.potongan.mulai}. Ringkas hanya isi bagian ini. Waktu di linimasa dihitung dari awal acara (tambahkan ${j.potongan.mulai} menit).` : ''}${sumber === 'foto' ? '\n- Untuk waktu di linimasa yang dari foto, pakai nomor foto, misalnya "Foto 1-3".' : ''}`;
+- penutup: hal terpenting berikutnya (langkah berikutnya atau pesan utama), 1 kalimat pendek.
+- tabel: SETIAP tabel di materi disalin sebagai tabel (kalau tidak ada tabel, daftar kosong). judul = judul tabel PERSIS seperti tertulis (jangan dipotong; kata pembeda seperti "Loyalist" wajib ikut). kolom = nama kolom SINGKAT maks 2 kata, urut kiri ke kanan. baris = SEMUA baris, tiap baris berisi sel sebanyak kolom, isi sel disalin apa adanya (angka tidak dibulatkan; sel kosong tulis "-"; sel gabungan seperti "Mass" diulang di tiap baris). catatan = catatan di bawah tabel dan kepanjangan nama kolom yang disingkat.${j.potongan ? `\n\nPENTING: rekaman ini adalah bagian ${j.potongan.k} dari ${j.potongan.N} dari SATU acara yang sama, dimulai pada menit ke-${j.potongan.mulai}. Ringkas hanya isi bagian ini. Waktu di linimasa dihitung dari awal acara (tambahkan ${j.potongan.mulai} menit).` : ''}${sumber === 'foto' ? '\n- Untuk waktu di linimasa yang dari foto, pakai nomor foto, misalnya "Foto 1-3".' : ''}`;
 }
 /* Jawaban AI dikirim sedikit demi sedikit (streaming) supaya sambungan tidak "diam" lalu diputus jaringan */
 async function mintaRingkasan(m, body, onTeks, batas = 60000) {
@@ -332,7 +336,7 @@ const kecilkanFoto = f => new Promise((ok, no) => { // foto dikecilkan di HP (si
 const keBase64 = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(b); });
 const rangkum = (file, j, mj, sumber = 'rekaman') => mintaJSON([{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: buatPrompt(j, sumber) }], mj);
 function gabungkan(list, j, mj) { // satukan ringkasan beberapa bagian jadi satu kesimpulan menyeluruh
-  const data = list.map((h, i) => ({ bagian_ke: i + 1, ...h, seksi: seksiDari(h), tugas: h.tugas.map(({ apa, siapa, kapan, selesai }) => ({ apa, siapa, kapan, selesai })) }));
+  const data = list.map((h, i) => ({ bagian_ke: i + 1, ...h, tabel: undefined, seksi: seksiDari(h), tugas: h.tugas.map(({ apa, siapa, kapan, selesai }) => ({ apa, siapa, kapan, selesai })) }));
   const t = templateDari(j.jenis || 'meeting');
   return mintaJSON([{ text: `Kamu pencatat yang teliti. Jenis acara: ${namaJenis(j.jenis)}. Di bawah ini ada ringkasan dari ${list.length} bagian (potongan rekaman, kumpulan foto, dan/atau dokumen) dari SATU acara dengan "${j.nama}"${j.topik ? ` (topik: ${j.topik})` : ''}.
 Satukan semuanya menjadi SATU kesimpulan menyeluruh, seolah-olah merangkum seluruh acara sekaligus. Tulis dalam bahasa Indonesia sehari-hari yang sederhana.
@@ -345,6 +349,7 @@ Aturan:
 - tugas: gabungkan yang sama, satu baris = satu pekerjaan. Kalau di data selesai true, tetap tulis selesai true.
 ${aturanSeksi(j.jenis || 'meeting')}
 - Jangan menambah isi apa pun yang tidak ada di DATA (tidak boleh menambah definisi, alasan, atau angka sendiri).
+- tabel: kembalikan daftar kosong (tabel digabung otomatis oleh aplikasi).
 - Isi tiap seksi: gabungkan dari semua bagian tanpa dobel; angka & tabel jangan dikurangi; linimasa diurutkan menurut waktu; buang pertanyaan yang ternyata sudah terjawab di bagian lain.${t && t.seksi.some(s => s[1] === 'pesan') ? ' Draf pesan ditulis ulang untuk keseluruhan.' : ''}
 - penutup: hal terpenting berikutnya, 1 kalimat pendek.
 
@@ -353,6 +358,13 @@ ${JSON.stringify(data)}` }], mj, true);
 }
 const GAYA = { belum: ['coral', 'tanya'], centang: ['sage', 'star'], angka: ['coral', 'star'], linimasa: ['blue', 'jam'], daftar: ['lilac', 'tanya'], kutipan: ['sage', 'kutip'], ayat: ['butter', 'kutip'], istilah: ['blue', 'star'], langkah: ['coral', 'tugas'], pesan: ['sage', 'kirim'] };
 const TETAP = s => s.bentuk === 'angka' || /syarat|ketentuan/i.test(s.judul); // bagian yang tidak boleh diringkas AI
+function gabungTabel(list) { // tabel dengan judul & kolom sama dari beberapa bagian digabung, baris dobel dibuang
+  const g = {};
+  list.forEach(b => (b.tabel || []).forEach(t => { const k = (t.judul + '|' + t.kolom.join('|')).toLowerCase().replace(/\s+/g, ' '); const a = g[k] = g[k] || { ...t, baris: [], ada: new Set(), catatan: '' };
+    t.baris.forEach(r => { const kk = r.join('|').toLowerCase(); if (!a.ada.has(kk)) { a.ada.add(kk); a.baris.push(r); } });
+    if (t.catatan && !a.catatan.includes(t.catatan)) a.catatan = [a.catatan, t.catatan].filter(Boolean).join(' · '); }));
+  return Object.values(g).map(({ ada, ...t }) => ({ ...t, baris: t.baris.slice(0, 120) }));
+}
 function tetapLengkap(h, list) { // angka/tabel & syarat dari semua bagian dijejer apa adanya (tanpa dobel), menggantikan versi ringkasan AI
   const kunci = x => ((x.label || '') + '|' + x.teks).toLowerCase().replace(/\s+/g, ' ').trim(), kel = {};
   list.forEach(b => seksiDari(b).filter(TETAP).forEach(s => {
@@ -360,6 +372,7 @@ function tetapLengkap(h, list) { // angka/tabel & syarat dari semua bagian dijej
     s.isi.forEach(x => { const kk = kunci(x); if (!g.ada.has(kk)) { g.ada.add(kk); g.isi.push(x); } });
   }));
   const lokal = Object.values(kel).map(({ judul, bentuk, isi }) => ({ judul, bentuk, isi: isi.slice(0, 150) }));
+  h = { ...h, tabel: gabungTabel(list) };
   if (!lokal.length) return h;
   const pakai = new Set(), cari = s => lokal.find(l => (l.bentuk === 'angka') === (s.bentuk === 'angka'));
   const seksi = (h.seksi || []).flatMap(s => { if (!TETAP(s)) return [s]; const l = cari(s); if (!l || pakai.has(l)) return []; pakai.add(l); return [l]; }); // urutan tetap seperti susunan AI
@@ -371,6 +384,7 @@ const SKEMA_CEK = O({ koreksi: A(O({ id: STR, label: STR, teks: STR, hapus: { ty
 async function periksaUlang(sumber, h, j) {
   const sk = seksiDari(h), daftar = [`J | judul | ${h.judul}`, `I | inti | ${h.inti}`, ...h.poin.map((p, i) => `P${i} | poin | ${p.judul}: ${p.isi}`)];
   sk.forEach((s, si) => s.bentuk !== 'ayat' && s.isi.forEach((x, xi) => daftar.push(s.bentuk === 'angka' ? `S${si}.${xi} | ${s.judul} (ANGKA: nilai dikunci, hanya nama baris boleh dikoreksi) | nama: ${x.label}` : `S${si}.${xi} | ${s.judul} | ${x.label ? x.label + ': ' : ''}${x.teks}`)));
+  (h.tabel || []).forEach((t, ti) => daftar.push(`T${ti} | TABEL (isi sel dikunci; koreksi judul di label, nama kolom di teks dipisah " | ") | judul: ${t.judul} | kolom: ${t.kolom.join(' | ')}`));
   const prompt = `Kamu pemeriksa yang teliti. Di atas adalah materi asli. Di bawah adalah hasil ringkasan materi itu, satu item per baris (id | bagian | isi).
 Cocokkan SETIAP item dengan materi asli, lalu kembalikan HANYA koreksi untuk item yang salah:
 - nama/label/judul baris yang salah atau tertukar (mis. nama tabel salah),
@@ -389,9 +403,10 @@ ${daftar.join('\n')}`;
 }
 function terapkanKoreksi(h, k) {
   const sk = seksiDari(h).map(s => ({ ...s, isi: s.isi.map(x => ({ ...x })) })), poin = h.poin.map(p => ({ ...p })), hp = new Set();
-  let judul = h.judul, inti = h.inti;
+  let judul = h.judul, inti = h.inti; const tabel = (h.tabel || []).map(t => ({ ...t, kolom: [...t.kolom] }));
   for (const c of (k?.koreksi || []).slice(0, 60)) {
     const id = String(c.id || '').trim(), teks = potong(c.teks, 400), label = potong(c.label, 80);
+    if (/^T\d+$/.test(id) && tabel[+id.slice(1)]) { const t = tabel[+id.slice(1)]; if (label) t.judul = potong(label, 90); const kl = String(c.teks || '').split('|').map(s => s.trim()).filter(Boolean); if (kl.length === t.kolom.length) t.kolom = kl.map(s => potong(s, 30)); continue; } // isi sel tidak pernah diubah
     if (id === 'J' && teks) judul = potong(teks, 80); else if (id === 'I' && teks) inti = potong(teks, 220);
     else if (/^P\d+$/.test(id) && poin[+id.slice(1)]) { if (c.hapus) hp.add(id); else if (teks) { const [a, ...b] = teks.split(':'); poin[+id.slice(1)].isi = potong(b.length ? b.join(':').trim() : teks, 320); if (b.length) poin[+id.slice(1)].judul = potong(a, 60); } }
     else { const m = /^S(\d+)\.(\d+)$/.exec(id), s = m && sk[+m[1]], x = s && s.isi[+m[2]]; if (!x) continue;
@@ -399,14 +414,19 @@ function terapkanKoreksi(h, k) {
       if (c.hapus) x.hapus = true; else { if (teks) x.teks = teks; if (label) x.label = label; } }
   }
   for (const t of (k?.tambah || []).slice(0, 40)) { if (!t.teks) continue; const s = sk.find(s => s.judul.toLowerCase() === String(t.bagian).toLowerCase()) || sk.find(s => s.bentuk === 'angka' && t.label); if (s) s.isi.push({ label: potong(t.label, 80), teks: potong(t.teks, 400), ket: '' }); }
-  return { ...h, judul, inti, poin: poin.filter((_, i) => !hp.has('P' + i)), seksi: sk.map(s => ({ ...s, isi: s.isi.filter(x => !x.hapus) })).filter(s => s.isi.length) };
+  return { ...h, judul, inti, tabel, poin: poin.filter((_, i) => !hp.has('P' + i)), seksi: sk.map(s => ({ ...s, isi: s.isi.filter(x => !x.hapus) })).filter(s => s.isi.length) };
 }
 function gabungLokal(list) { // cadangan kalau AI gagal menyatukan: gabungkan semua bagian apa adanya tanpa dobel
   const unik = (xs, k) => { const s = new Set(); return xs.filter(x => { const v = k(x).toLowerCase().trim(); return v && !s.has(v) && s.add(v); }); };
   const sk = {}; list.forEach(h => seksiDari(h).forEach(s => { const a = sk[s.judul] = sk[s.judul] || { judul: s.judul, bentuk: s.bentuk, isi: [] }; a.isi.push(...s.isi); }));
   const poin = []; for (let i = 0; poin.length < 10 && list.some(h => h.poin[i]); i++) list.forEach(h => h.poin[i] && poin.length < 10 && poin.push(h.poin[i]));
   return { judul: list[0].judul, inti: list[0].inti, penutup: list[list.length - 1].penutup, bagian: unik(list.flatMap(h => h.bagian), x => x).slice(0, 6),
-    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.label + x.teks).slice(0, s.bentuk === 'angka' ? 150 : 30) })) };
+    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), tabel: gabungTabel(list), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.label + x.teks).slice(0, s.bentuk === 'angka' ? 150 : 30) })) };
+}
+function rapiTabel(t) { // tabel dari AI dibersihkan: jumlah sel tiap baris disamakan dengan jumlah kolom
+  return arr(t, 20).map(x => { const kolom = arr(x.kolom, 10).map(c => potong(c, 30)); const n = kolom.length;
+    return { judul: potong(x.judul, 90), kolom, catatan: potong(x.catatan, 400), baris: arr(x.baris, 60).map(b => { const r = arr(b, 10).map(c => potong(c, 40) || '-'); while (r.length < n) r.push('-'); return r.slice(0, n); }).filter(r => r.some(c => c !== '-')) };
+  }).filter(x => x.judul && x.kolom.length && x.baris.length);
 }
 function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
   if (Array.isArray(h.seksi)) return h.seksi.map(s => s.bentuk !== 'ayat' ? s : { ...s, isi: s.isi.map(x => ({ ...x, ket: /dibaca/i.test(x.ket || '') ? 'dibacakan' : 'cek di Alkitab' })) }); // keterangan ayat hanya boleh dua ini
@@ -424,6 +444,7 @@ function rapikan(o) { // bersihkan & batasi isi dari AI sebelum disimpan
     bagian: bagian.length ? bagian : ['Umum'],
     poin: arr(o.poin, 12).map(p => ({ bagian: potong(p.bagian, 30), judul: potong(p.judul, 60), isi: potong(p.isi, 320), ikon: ILL[p.ikon] ? p.ikon : 'ide' })).filter(p => p.judul),
     tugas: arr(o.tugas, 25).map(t => ({ id: uid(), apa: potong(t.apa, 200), siapa: potong(t.siapa, 40), kapan: potong(t.kapan, 40), selesai: t.selesai === true })).filter(t => t.apa),
+    tabel: rapiTabel(o.tabel),
     seksi: arr(seksiDari(o), 9).map(s => ({ judul: potong(s.judul, 40), bentuk: BENTUK.includes(s.bentuk) ? s.bentuk : 'daftar', isi: arr(s.isi, s.bentuk === 'angka' ? 70 : 20).map(x => ({ teks: potong(x.teks, s.bentuk === 'pesan' ? 1500 : 400), label: potong(x.label, 80), ket: potong(x.ket, 200) })).filter(x => x.teks && (s.bentuk !== 'istilah' || (x.label && x.label.trim().toLowerCase() !== x.teks.trim().toLowerCase()))) })).filter(s => s.judul && s.isi.length)
   };
 }
@@ -885,6 +906,12 @@ async function prosesJalan() {
 }
 
 /* ---- Hasil (kartu ringkasan) ---- */
+function tabelHtml(t, ti) { // tabel diperkecil supaya semua kolom muat di layar HP
+  const n = t.kolom.length, fs = n <= 3 ? 13 : n <= 5 ? 11.5 : n <= 7 ? 10 : 9;
+  return `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-sage">${svg('star', '#fff', HEX.sage)}</span><h3 data-ub="T${ti}.j">${esc(t.judul)}</h3></div>
+  <table class="tbl" style="font-size:${fs}px"><thead><tr>${t.kolom.map((c, ci) => `<th data-ub="T${ti}.h.${ci}">${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.baris.map((r, ri) => `<tr>${r.map((c, ci) => `<td data-ub="T${ti}.${ri}.${ci}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+  ${t.catatan ? `<p class="tbl-cat" data-ub="T${ti}.c">${esc(t.catatan)}</p>` : ''}</section>`;
+}
 function seksiHtml(s, n) { // satu bagian di halaman hasil, tampilannya mengikuti bentuk
   const [c, ik] = GAYA[s.bentuk] || GAYA.daftar, e = esc;
   const isi = s.isi.map((x, i) => ({
@@ -910,26 +937,28 @@ function pasangUbah(m) {
   app.onclick = e => { if (UBAH !== m.id) return; const el = e.target.closest('[data-ub]'); if (!el) return; e.preventDefault(); e.stopPropagation(); bukaUbah(m, el.dataset.ub); };
 }
 function bukaUbah(m, id) { // lembar ubah satu baris
-  const h = m.hasil, sk = seksiDari(h), ms = /^S(\d+)\.(\d+)$/.exec(id), s = ms && sk[+ms[1]], x = s && s.isi[+ms[2]], p = /^P\d+$/.test(id) && h.poin[+id.slice(1)];
-  const awal = id === 'J' ? { isi: h.judul, judulIsi: 'Judul rangkuman' } : id === 'I' ? { isi: h.inti, judulIsi: 'Kalimat inti' } : id === 'T' ? { isi: h.penutup, judulIsi: 'Langkah berikutnya' } : p ? { nama: p.judul, isi: p.isi, judulNama: 'Judul poin' } : x ? { nama: x.label, isi: x.teks, judulNama: 'Nama', bisaNama: x.label || ['angka', 'linimasa', 'ayat', 'istilah'].includes(s.bentuk) } : null;
+  const h = m.hasil, sk = seksiDari(h), mt = /^T(\d+)\.(j|c|h\.\d+|\d+\.\d+)$/.exec(id), tb = mt && (h.tabel || [])[+mt[1]], ms = /^S(\d+)\.(\d+)$/.exec(id), s = ms && sk[+ms[1]], x = s && s.isi[+ms[2]], p = /^P\d+$/.test(id) && h.poin[+id.slice(1)];
+  const tsel = tb && (mt[2] === 'j' ? { isi: tb.judul, judulIsi: 'Judul tabel' } : mt[2] === 'c' ? { isi: tb.catatan, judulIsi: 'Catatan tabel' } : mt[2].startsWith('h.') ? { isi: tb.kolom[+mt[2].slice(2)], judulIsi: 'Nama kolom' } : { isi: (tb.baris[+mt[2].split('.')[0]] || [])[+mt[2].split('.')[1]], judulIsi: 'Isi sel (' + tb.kolom[+mt[2].split('.')[1]] + ')', baris: true });
+  const awal = tsel || (id === 'J' ? { isi: h.judul, judulIsi: 'Judul rangkuman' } : id === 'I' ? { isi: h.inti, judulIsi: 'Kalimat inti' } : id === 'T' ? { isi: h.penutup, judulIsi: 'Langkah berikutnya' } : p ? { nama: p.judul, isi: p.isi, judulNama: 'Judul poin' } : x ? { nama: x.label, isi: x.teks, judulNama: 'Nama', bisaNama: x.label || ['angka', 'linimasa', 'ayat', 'istilah'].includes(s.bentuk) } : null);
   if (!awal) return;
-  const adaNama = p || (x && awal.bisaNama), bolehHapus = p || x || id === 'T';
+  const adaNama = p || (x && awal.bisaNama), bolehHapus = p || x || id === 'T' || awal.baris || (tb && mt[2] === 'c');
   const w = document.createElement('div'); w.className = 'lembar-bg';
-  w.innerHTML = `<div class="lembar" role="dialog" aria-modal="true" aria-label="Ubah tulisan"><div class="pegangan"></div><b style="font-size:16px">${x ? esc(s.judul) : 'Ubah tulisan'}</b>
+  w.innerHTML = `<div class="lembar" role="dialog" aria-modal="true" aria-label="Ubah tulisan"><div class="pegangan"></div><b style="font-size:16px">${x ? esc(s.judul) : tb ? esc(tb.judul) : 'Ubah tulisan'}</b>
     ${adaNama ? `<label class="lb" for="ubNama">${esc(awal.judulNama)}</label><input class="in" id="ubNama" maxlength="80" value="${esc(awal.nama || '')}">` : ''}
     <label class="lb" for="ubIsi">${esc(awal.judulIsi || 'Isi')}</label><textarea class="in" id="ubIsi" rows="4" maxlength="${id === 'J' ? 80 : 400}">${esc(awal.isi || '')}</textarea>
     <div class="err" id="ubErr" hidden></div>
     <div class="dua"><button class="btn clay" id="ubBatal"><span>Batal</span></button><button class="btn utama i3 c-sage" id="ubSimpan"><span>Simpan</span></button></div>
-    ${bolehHapus ? `<button class="link" id="ubHapus" style="color:#A8331A;width:100%">Hapus baris ini</button>` : ''}</div>`;
+    ${bolehHapus ? `<button class="link" id="ubHapus" style="color:#A8331A;width:100%">${awal.baris ? 'Hapus seluruh baris tabel ini' : 'Hapus baris ini'}</button>` : ''}</div>`;
   document.body.append(w); setTimeout(() => $('#ubIsi').focus(), 50);
   const tutup = () => w.remove();
   w.onclick = e => { if (e.target === w) tutup(); }; $('#ubBatal').onclick = tutup;
   const simpan = async (btn, hapus) => {
     const isi = $('#ubIsi').value.trim().replace(/\s+\n/g, '\n'), nama = adaNama ? $('#ubNama').value.trim() : '';
-    if (!hapus && !isi) { $('#ubErr').textContent = 'Isinya tidak boleh kosong.'; $('#ubErr').hidden = false; return; }
+    if (!hapus && !isi && !(tb && mt[2] === 'c')) { $('#ubErr').textContent = 'Isinya tidak boleh kosong.'; $('#ubErr').hidden = false; return; }
     if (hapus && !confirm('Hapus baris ini?')) return;
-    const baru = { ...h, poin: h.poin.map(q => ({ ...q })), seksi: sk.map(t => ({ ...t, isi: t.isi.map(y => ({ ...y })) })) };
-    if (id === 'J') baru.judul = isi; else if (id === 'I') baru.inti = isi; else if (id === 'T') baru.penutup = hapus ? '' : isi;
+    const baru = { ...h, poin: h.poin.map(q => ({ ...q })), seksi: sk.map(t => ({ ...t, isi: t.isi.map(y => ({ ...y })) })), tabel: (h.tabel || []).map(t => ({ ...t, kolom: [...t.kolom], baris: t.baris.map(r => [...r]) })) };
+    if (tb) { const t = baru.tabel[+mt[1]], [a, b] = mt[2].split('.'); if (a === 'j') t.judul = isi; else if (a === 'c') t.catatan = hapus ? '' : isi; else if (a === 'h') t.kolom[+b] = isi; else if (hapus) t.baris.splice(+a, 1); else t.baris[+a][+b] = isi; baru.tabel = baru.tabel.filter(t => t.baris.length); }
+    else if (id === 'J') baru.judul = isi; else if (id === 'I') baru.inti = isi; else if (id === 'T') baru.penutup = hapus ? '' : isi;
     else if (p) { const i = +id.slice(1); if (hapus) baru.poin.splice(i, 1); else Object.assign(baru.poin[i], { judul: nama || p.judul, isi }); }
     else { const t = baru.seksi[+ms[1]]; if (hapus) t.isi.splice(+ms[2], 1); else Object.assign(t.isi[+ms[2]], { teks: isi, label: nama }); baru.seksi = baru.seksi.filter(t => t.isi.length); }
     await tombolProses(btn, 'Menyimpan…', async () => {
@@ -957,6 +986,7 @@ R.hasil = id => {
     ${h.penutup ? `<div class="pita clay" data-ub="T">${svg('hati', '#E0704F')}<span>${esc(h.penutup)}</span></div>` : ''}
   </section>
   ${h.tugas.length ? `<section class="kotak clay"><div class="sek-h"><span class="i3 ic c-butter">${svg('tugas', '#fff', '#E0A532')}</span><h3>Tugas</h3></div>${h.tugas.map(t => barisTugas(t, m, false)).join('')}</section>` : ''}
+  ${(h.tabel || []).map(tabelHtml).join('')}
   ${seksiDari(h).map(seksiHtml).join('')}
   <div class="dua"><button class="btn clay" id="bSimpan">${svg('unduh', '#4A3428')}<span>Simpan gambar</span></button><button class="btn utama i3 c-coral" id="bKirim"><img class="wa" src="./wa.svg" alt=""><span>Kirim ke WA</span></button></div>
   <button class="link" id="bHapus" style="color:#A8331A">Hapus meeting ini</button>`;
@@ -1044,6 +1074,21 @@ async function gambarPoster(m, o) { // ringkasan jadi SATU gambar: isi disusun b
     if (k) tulis([k], X0 + 60, y + 30 + l.length * 38, F(24, 700), '#7A6152', 0);
   } }; }));
   const pl = (t, w, f) => bungkus(t, w, f);
+  for (const t of h.tabel || []) { // tabel digambar dengan kolom, baris berwarna selang-seling; kepala kolom diulang tiap potongan
+    const n = t.kolom.length, fz = n <= 3 ? 26 : n <= 5 ? 23 : n <= 7 ? 20 : 18, fh = F(fz - 1, 900), fc = F(fz, 800), lh = fz + 8;
+    ukur.font = fc; const lebar = t.kolom.map((c, ci) => { ukur.font = fh; let w = ukur.measureText(c).width; ukur.font = fc; t.baris.forEach(r => { w = Math.max(w, ukur.measureText(r[ci]).width); }); return Math.min(Math.max(w, 40), iw * 0.45) + 18; });
+    const sk = iw / lebar.reduce((a, b) => a + b, 0), cw = lebar.map(w => w * sk), cx = cw.map((_, i) => X0 + cw.slice(0, i).reduce((a, b) => a + b, 0));
+    const sel = (teks, i, f) => bungkus(teks, cw[i] - 12, f);
+    const head = t.kolom.map((c, i) => sel(c, i, fh)), hh0 = Math.max(...head.map(l => l.length)) * lh + 16;
+    const gbrBaris = (sel2, y, hh, f, warna, latar, kiriTebal) => { kotak(X0, y, iw, hh, 8, latar); sel2.forEach((l, i) => { x.textAlign = i === 0 ? 'left' : 'center'; tulis(l, i === 0 ? cx[i] + 8 : cx[i] + cw[i] / 2, y + lh, i === 0 && kiriTebal ? F(fz, 900) : f, warna, lh); }); x.textAlign = 'left'; };
+    const items = [];
+    for (let a = 0; a < t.baris.length; a += 12) {
+      const pot = t.baris.slice(a, a + 12).map(r => r.map((c, i) => sel(c, i, i === 0 ? F(fz, 900) : fc))), tinggi = pot.map(r => Math.max(...r.map(l => l.length)) * lh + 12);
+      items.push({ h: hh0 + tinggi.reduce((p, q) => p + q, 0) + 6, g: async y => { gbrBaris(head, y, hh0, fh, TK.sage, PA.sage, false); let yy = y + hh0 + 2; pot.forEach((r, ri) => { gbrBaris(r, yy, tinggi[ri], fc, '#4A3428', ri % 2 ? '#F6EEDF' : '#FFFDF8', true); yy += tinggi[ri]; }); } });
+    }
+    if (t.catatan) { const l = bungkus(t.catatan, iw, F(22, 700)); items.push({ h: l.length * 30 + 10, g: async y => tulis(l, X0, y + 24, F(22, 700), '#7A6152', 30) }); }
+    seksi(t.judul, svg('star', '#fff', HX.sage), 'sage', items, '#FBF4EC');
+  }
   for (const s of daftarSeksi) {
     const [c, ik] = GAYA[s.bentuk] || GAYA.daftar, it = s.isi.map((q, i) => {
       if (s.bentuk === 'linimasa') { const t = pl(q.teks, iw - 150, F(30, 900)), k = pl(q.ket, iw - 150, F(26, 700)), hh = t.length * 38 + k.length * 34 + 24; return { h: hh, g: async y => { x.fillStyle = PA.blue; x.fillRect(X0 + 128, y - 6, 5, hh); tulis(pl(q.label, 120, F(24, 900)), X0, y + 26, F(24, 900), HX.blue, 28); tulis(t, X0 + 152, y + 26, F(30, 900), '#4A3428', 38); tulis(k, X0 + 152, y + 26 + t.length * 38, F(26, 700), '#7A6152', 34); } }; }
