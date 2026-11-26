@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.5.5',
+  VERSI: '1.5.6',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -352,12 +352,26 @@ DATA:
 ${JSON.stringify(data)}` }], mj, true);
 }
 const GAYA = { belum: ['coral', 'tanya'], centang: ['sage', 'star'], angka: ['coral', 'star'], linimasa: ['blue', 'jam'], daftar: ['lilac', 'tanya'], kutipan: ['sage', 'kutip'], ayat: ['butter', 'kutip'], istilah: ['blue', 'star'], langkah: ['coral', 'tugas'], pesan: ['sage', 'kirim'] };
+const TETAP = s => s.bentuk === 'angka' || /syarat|ketentuan/i.test(s.judul); // bagian yang tidak boleh diringkas AI
+function tetapLengkap(h, list) { // angka/tabel & syarat dari semua bagian dijejer apa adanya (tanpa dobel), menggantikan versi ringkasan AI
+  const kunci = x => ((x.label || '') + '|' + x.teks).toLowerCase().replace(/\s+/g, ' ').trim(), kel = {};
+  list.forEach(b => seksiDari(b).filter(TETAP).forEach(s => {
+    const k = s.bentuk === 'angka' ? 'angka' : 'syarat', g = kel[k] = kel[k] || { judul: s.judul, bentuk: s.bentuk, isi: [], ada: new Set() };
+    s.isi.forEach(x => { const kk = kunci(x); if (!g.ada.has(kk)) { g.ada.add(kk); g.isi.push(x); } });
+  }));
+  const lokal = Object.values(kel).map(({ judul, bentuk, isi }) => ({ judul, bentuk, isi: isi.slice(0, 150) }));
+  if (!lokal.length) return h;
+  const pakai = new Set(), cari = s => lokal.find(l => (l.bentuk === 'angka') === (s.bentuk === 'angka'));
+  const seksi = (h.seksi || []).flatMap(s => { if (!TETAP(s)) return [s]; const l = cari(s); if (!l || pakai.has(l)) return []; pakai.add(l); return [l]; }); // urutan tetap seperti susunan AI
+  seksi.unshift(...lokal.filter(l => !pakai.has(l)));
+  return { ...h, seksi };
+}
 function gabungLokal(list) { // cadangan kalau AI gagal menyatukan: gabungkan semua bagian apa adanya tanpa dobel
   const unik = (xs, k) => { const s = new Set(); return xs.filter(x => { const v = k(x).toLowerCase().trim(); return v && !s.has(v) && s.add(v); }); };
   const sk = {}; list.forEach(h => seksiDari(h).forEach(s => { const a = sk[s.judul] = sk[s.judul] || { judul: s.judul, bentuk: s.bentuk, isi: [] }; a.isi.push(...s.isi); }));
   const poin = []; for (let i = 0; poin.length < 10 && list.some(h => h.poin[i]); i++) list.forEach(h => h.poin[i] && poin.length < 10 && poin.push(h.poin[i]));
   return { judul: list[0].judul, inti: list[0].inti, penutup: list[list.length - 1].penutup, bagian: unik(list.flatMap(h => h.bagian), x => x).slice(0, 6),
-    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.label + x.teks).slice(0, s.bentuk === 'angka' ? 70 : 20) })) };
+    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.label + x.teks).slice(0, s.bentuk === 'angka' ? 150 : 30) })) };
 }
 function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
   if (Array.isArray(h.seksi)) return h.seksi.map(s => s.bentuk !== 'ayat' ? s : { ...s, isi: s.isi.map(x => ({ ...x, ket: /dibaca/i.test(x.ket || '') ? 'dibacakan' : 'cek di Alkitab' })) }); // keterangan ayat hanya boleh dua ini
@@ -532,7 +546,7 @@ R.orangDetail = id => {
   <button class="link" id="hapusOrang" style="color:#A8331A">Hapus ${esc(o.nama)} dan semua meeting-nya</button>`;
   document.querySelectorAll('[data-satukan]').forEach(b => b.onclick = () => tombolProses(b, 'AI sedang menyatukan…', async () => {
     const g = grup[b.dataset.satukan].slice().sort((a, c) => a.tanggal - c.tanggal);
-    let h; try { h = await gabungkan(g.map(m => m.hasil), { nama: o.nama, topik: '', jenis: g[0].jenis || 'meeting' }, () => {}); } catch (x) { return toast(x.message || 'Gagal menyatukan. Coba lagi.', 5000); }
+    let h; try { h = tetapLengkap(await gabungkan(g.map(m => m.hasil), { nama: o.nama, topik: '', jenis: g[0].jenis || 'meeting' }, () => {}), g.map(m => m.hasil)); } catch (x) { return toast(x.message || 'Gagal menyatukan. Coba lagi.', 5000); }
     const baru = { id: uid(), orangId: o.id, tanggal: g[0].tanggal, durasi: g.reduce((a, m) => a + (m.durasi || 0), 0), topik: '', jenis: g[0].jenis, hasil: h, versi: 1 };
     try { await DB.ganti([baru], g.map(m => m.id)); } catch { return toast('Gagal menyimpan. Coba lagi.'); } // potongan lama baru dihapus kalau gabungan tersimpan
     S0.meeting = [baru, ...S0.meeting.filter(m => !g.includes(m))].sort((a, c) => c.tanggal - a.tanggal); perbaruiLencana();
@@ -675,7 +689,7 @@ R.baru = q => {
   else pasangPerekam(pasang);
   if (!rekam && q.get('dibagikan')) ambilKiriman(pasang);
   let fotos = []; const daftar = $('#daftarFoto');
-  const gambarFoto = () => { daftar.innerHTML = fotos.map((f, i) => `<div style="position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--well)">${f.url ? `<img src="${f.url}" alt="Foto ${i + 1}" style="width:100%;height:100%;object-fit:cover">` : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:4px;text-align:center"><b style="font-size:13px;font-weight:900;color:#A8331A">PDF</b><small style="font-size:9px;font-weight:700;word-break:break-all;line-height:1.2">${esc((f.nama || '').slice(0, 24))}</small></div>`}<button type="button" data-hapusfoto="${i}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:999px;border:0;background:rgba(74,52,40,.75);color:#fff;font-weight:900">×</button></div>`).join(''); const nP = fotos.filter(f => f.pdf).length, nF = fotos.length - nP; $('#infoFoto').textContent = fotos.length ? [nF && nF + ' foto', nP && nP + ' PDF'].filter(Boolean).join(' dan ') + ' dipilih.' : 'Slide, papan tulis, catatan, atau file PDF. Bisa banyak.'; };
+  const gambarFoto = () => { if (!$('#infoFoto')) return; /* halaman sudah ditinggal */ daftar.innerHTML = fotos.map((f, i) => `<div style="position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--well)">${f.url ? `<img src="${f.url}" alt="Foto ${i + 1}" style="width:100%;height:100%;object-fit:cover">` : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:4px;text-align:center"><b style="font-size:13px;font-weight:900;color:#A8331A">PDF</b><small style="font-size:9px;font-weight:700;word-break:break-all;line-height:1.2">${esc((f.nama || '').slice(0, 24))}</small></div>`}<button type="button" data-hapusfoto="${i}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:999px;border:0;background:rgba(74,52,40,.75);color:#fff;font-weight:900">×</button></div>`).join(''); const nP = fotos.filter(f => f.pdf).length, nF = fotos.length - nP; $('#infoFoto').textContent = fotos.length ? [nF && nF + ' foto', nP && nP + ' PDF'].filter(Boolean).join(' dan ') + ' dipilih.' : 'Slide, papan tulis, catatan, atau file PDF. Bisa banyak.'; };
   $('#tambahFoto').onclick = () => $('#fotoIn').click();
   $('#fotoIn').onchange = async e => {
     const semua = [...e.target.files]; e.target.value = '';
@@ -811,7 +825,7 @@ async function prosesJalan() {
       hapusFileGemini(p.file.name); p.file = null; p.blob = null; // rekaman bagian ini tidak dipakai lagi
     }
     let hasil = j.bagian[0].hasil;
-    if (N > 1) { try { hasil = await gabungkan(j.bagian.map(p => p.hasil), j, maju(86, 96, 'Menyatukan kesimpulan: ')); } catch (e) { if (e.status === 401 || e.status === 403) throw e; hasil = gabungLokal(j.bagian.map(p => p.hasil)); toast('AI gagal menyatukan, jadi bagian-bagiannya digabung langsung. Isinya tetap lengkap.', 6000); } }
+    if (N > 1) { try { hasil = tetapLengkap(await gabungkan(j.bagian.map(p => p.hasil), j, maju(86, 96, 'Menyatukan kesimpulan: ')), j.bagian.map(p => p.hasil)); } catch (e) { if (e.status === 401 || e.status === 403) throw e; hasil = gabungLokal(j.bagian.map(p => p.hasil)); toast('AI gagal menyatukan, jadi bagian-bagiannya digabung langsung. Isinya tetap lengkap.', 6000); } }
     setTahap('Menyimpan…', 97);
     let o = S0.orang.find(x => x.nama.toLowerCase() === j.nama.toLowerCase());
     const orangBaru = !o; if (!o) o = { id: uid(), nama: j.nama, warna: WARNA[S0.orang.length % 5], dibuat: Date.now() };
