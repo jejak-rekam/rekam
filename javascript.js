@@ -1,7 +1,7 @@
 'use strict';
 /* ========== CONFIG ========== */
 const CONFIG = {
-  VERSI: '1.5.3',
+  VERSI: '1.5.4',
   API: 'https://generativelanguage.googleapis.com',
   MODEL: 'gemini-flash-latest',       // model utama (bisa diganti / dicek di menu Atur)
   MODEL_CADANGAN: 'gemini-flash-lite-latest', // dipakai kalau model utama tidak tersedia
@@ -207,7 +207,8 @@ const TEMPLATE = {
     ['Penerapan minggu ini', 'daftar', 'hal praktis yang bisa dilakukan minggu ini'],
     ['Pertanyaan renungan', 'daftar', 'pertanyaan untuk direnungkan sendiri atau dibahas di komsel']] },
   kelas: { nama: 'Seminar / kelas', orang: 'Pembicara / tempat', contoh: 'Pak Dimas · kelas Canva', tugas: false, seksi: [
-    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = nama tabel + baris (mis. "Pasti Fixed · Mass 1-5 th"), teks = semua kolomnya dalam satu baris (mis. "Primary 7,40% · Gold 7,75% · Secondary 8,00% · Multiguna 8,25%"). Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Kosongkan kalau tidak ada angka'],
+    ['Angka & tabel penting', 'angka', 'SALIN semua angka penting dari materi: persen, tarif, biaya, tenor, plafon, tanggal/periode, syarat berangka, nomor kontak. Untuk TABEL: SATU baris tabel = SATU item, label = nama tabel + baris (mis. "Pasti Fixed · Mass 1-5 th"), teks = semua kolomnya dalam satu baris, SETIAP nilai WAJIB diawali nama kolomnya (mis. "Primary 7,40% · Gold/TO 7,75% · Secondary 8,00% · Multiguna 8,25%"); kolom yang kosong (-) dilewati, jangan menulis nilai tanpa nama kolom. Salin SEMUA baris dari SEMUA tabel, juga catatan di bawah tabel (biaya pelunasan, batas tenor). Jangan dibulatkan atau dilewati. Maksimal 70 baris; dahulukan semua tabel tarif, tenor maksimal, biaya, plafon, lalu kontak. Kosongkan kalau tidak ada angka'],
+    ['Syarat & ketentuan', 'daftar', 'syarat, kriteria, ketentuan, siapa/produk yang berlaku atau TIDAK berlaku, promo dan batasnya, ditulis sesuai materi (satu poin = satu syarat). Angka tetap boleh ditulis di sini kalau bagian dari syarat. Kosongkan kalau tidak ada'],
     ['Istilah penting', 'istilah', 'HANYA istilah yang artinya dijelaskan di materi. label = istilah, teks = artinya sesuai materi (wajib diisi). Istilah yang artinya tidak dijelaskan jangan ditulis'],
     ['Langkah praktik', 'langkah', 'HANYA kalau materi benar-benar mengajarkan urutan langkah/cara (mis. tutorial "langkah 1, 2, 3"). Daftar produk, syarat, atau info BUKAN langkah. Dilarang menyusun langkah sendiri dari isi materi. Kalau tidak ada, WAJIB daftar kosong'],
     ['Masih belum jelas', 'belum', 'hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka/klaim tanpa dasar, atau yang saling bertentangan. Tulis langsung sebagai kalimat pendek (bukan format celah-tanya). Kosongkan kalau memang tidak ada']] }
@@ -224,7 +225,7 @@ const SKEMA = O({
 function aturanSeksi(jenis) {
   const t = templateDari(jenis);
   if (t) return `- seksi: WAJIB berisi bagian-bagian ini, dengan judul dan bentuk persis seperti di bawah dan urutan yang sama. Kalau tidak ada isinya, isi dengan daftar kosong:\n${t.seksi.map(([a, b, c], i) => `  ${i + 1}. judul "${a}", bentuk "${b}": ${c}`).join('\n')}`;
-  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Kalau materi berisi angka/tabel/biaya/kontak, bagian pertama WAJIB judul "Angka & tabel penting" bentuk "angka" yang menyalin semua angka itu per baris tanpa dilewati. Jangan mengarang isi bagian mana pun. Bagian terakhir WAJIB judul "Masih belum jelas" bentuk "belum": hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka tanpa dasar, atau saling bertentangan, ditulis langsung sebagai kalimat pendek (kosongkan kalau tidak ada). Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
+  return `- seksi: susun sendiri 3-6 bagian yang paling berguna untuk jenis "${jenis}". Kalau materi berisi syarat/ketentuan, buat juga bagian "Syarat & ketentuan" bentuk "daftar". Kalau materi berisi angka/tabel/biaya/kontak, bagian pertama WAJIB judul "Angka & tabel penting" bentuk "angka" yang menyalin semua angka itu per baris tanpa dilewati. Jangan mengarang isi bagian mana pun. Bagian terakhir WAJIB judul "Masih belum jelas" bentuk "belum": hal yang belum dijawab, belum dijelaskan, belum diputuskan, angka tanpa dasar, atau saling bertentangan, ditulis langsung sebagai kalimat pendek (kosongkan kalau tidak ada). Judul bagian singkat (maks 4 kata). Pilih bentuk yang cocok: daftar (poin biasa), centang (hal yang sudah pasti), langkah (urutan langkah), angka (label = nama, teks = nilai), linimasa (label = waktu/tanggal, teks = kegiatan, ket = keterangan), kutipan (teks = kalimat, ket = keterangan), istilah (label = istilah, teks = arti), pesan (satu teks siap kirim).`;
 }
 function buatPrompt(j, sumber = 'rekaman', n = 1) {
   const jenis = j.jenis || 'meeting', t = templateDari(jenis);
@@ -235,7 +236,7 @@ Info: ${t ? t.orang.replace('?', '') : 'dengan'} "${j.nama}". Topik: "${j.topik 
 
 Aturan:
 - Jangan mengarang. Tulis hanya yang benar-benar ada di ${sumber}. Bagian yang tidak jelas tulis "(tidak jelas)".
-${sumber !== 'rekaman' ? '- Ini dokumen: poin harus jelas dan lengkap (boleh sampai 12 poin, isi maksimal 30 kata). Semua angka, tanggal, nama, harga, tarif, tenor, dan syarat penting wajib ikut ditulis, jangan diringkas sampai hilang. Bagian "Masih belum jelas" wajib diperiksa sungguh-sungguh.\n' : ''}- judul: topik utama, maksimal 6 kata. inti: 1 kalimat (maksimal 20 kata).
+${sumber !== 'rekaman' ? '- Ini dokumen: poin harus jelas dan lengkap (boleh sampai 12 poin, isi maksimal 30 kata). Semua angka, tanggal, nama, harga, tarif, tenor, dan syarat penting wajib ikut ditulis, jangan diringkas sampai hilang. Bagian "Masih belum jelas" wajib diperiksa sungguh-sungguh.\n' : ''}${(j.jenis || 'meeting') !== 'khotbah' ? '- PAGAR WAJIB: setiap kalimat harus bisa ditunjuk sumbernya di materi. DILARANG menambah pengetahuan umum, definisi, alasan, atau contoh dari luar materi, walaupun kamu tahu itu benar. Kalau materi hanya menyebut sebuah istilah tanpa menjelaskan artinya, istilah itu JANGAN ditulis di Istilah penting (boleh masuk Masih belum jelas: "arti X tidak dijelaskan"). Lebih baik kosong daripada mengarang.\n' : ''}- judul: topik utama, maksimal 6 kata. inti: 1 kalimat (maksimal 20 kata).
 - bagian: kelompokkan isi menurut topik (1-6 topik, 1-2 kata).
 - poin: poin paling penting. Isi pendek 3-4 poin, sedang 4-6, panjang 6-10. Judul maksimal 5 kata, isi maksimal 18 kata. Kolom "bagian" sama persis dengan salah satu nama bagian. Pilih ikon yang cocok.
 - tugas: ${t && !t.tugas ? 'isi HANYA kalau pembicara jelas memberi tugas/PR (siapa mengerjakan apa). Nomor kontak, ajakan menghubungi, dan info umum BUKAN tugas. Kalau tidak ada, daftar kosong.' : 'siapa mengerjakan apa dan kapan. Satu baris = satu pekerjaan, jangan gabungkan. Kalau waktunya tidak disebut, kapan = "".'}
@@ -290,7 +291,7 @@ async function calonModel() {
 }
 async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan (teks saja), tanpa mode berpikir dan jawaban dibatasi // kirim ke AI, terima ringkasan berbentuk data
   let pikir = cepat ? null : { thinkingBudget: 512, includeThoughts: true }, galat, semuaPenuh = true;
-  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: cepat ? 12000 : 32768, temperature: 0.3, ...(pikir ? { thinkingConfig: pikir } : {}) } });
+  const body = () => JSON.stringify({ contents: [{ role: 'user', parts: isi }], generationConfig: { responseMimeType: 'application/json', responseSchema: SKEMA, maxOutputTokens: cepat ? 16000 : 32768, temperature: 0.2, ...(pikir ? { thinkingConfig: pikir } : {}) } });
   const tunggu = d => new Promise(s => setTimeout(s, d));
   const calon = await calonModel(), gagal = [];
   for (let putaran = 0; putaran < 2; putaran++) for (const m of calon) { // putaran kedua: semua model dicoba lagi setelah jeda
@@ -298,7 +299,7 @@ async function mintaJSON(isi, maju, cepat = false) { // cepat: untuk menyatukan 
     if (putaran) { setTahap('Server sibuk, mencoba lagi otomatis…', null, 'Semua model sibuk. Menunggu 30 detik lalu mencoba lagi.'); await tunggu(30000); }
     for (let coba = 0; coba < 1 + !putaran; coba++) {
       try {
-        const teks = await mintaRingkasan(m, body(), maju, cepat ? 40000 : 60000);
+        const teks = await mintaRingkasan(m, body(), maju, cepat ? 60000 : 80000);
         let o; try { o = JSON.parse(teks.replace(/^```(json)?|```$/g, '').trim()); } catch { o = null; }
         if (!o) { const x = new GagalAI('Jawaban AI terpotong atau kosong. Coba lagi.'); x.status = 'panjang'; throw x; }
         S0.modelJalan = m; // model yang berhasil dicoba duluan untuk bagian berikutnya
@@ -343,7 +344,8 @@ Aturan:
 - poin: 6-12 poin paling penting dari keseluruhan. Gabungkan yang mirip. Judul maksimal 5 kata, isi maksimal 25 kata. Kolom "bagian" sama persis dengan salah satu nama bagian.
 - tugas: gabungkan yang sama, satu baris = satu pekerjaan. Kalau di data selesai true, tetap tulis selesai true.
 ${aturanSeksi(j.jenis || 'meeting')}
-- Isi tiap seksi: gabungkan dari semua bagian tanpa dobel; linimasa diurutkan menurut waktu; buang pertanyaan yang ternyata sudah terjawab di bagian lain.${t && t.seksi.some(s => s[1] === 'pesan') ? ' Draf pesan ditulis ulang untuk keseluruhan.' : ''}
+- Jangan menambah isi apa pun yang tidak ada di DATA (tidak boleh menambah definisi, alasan, atau angka sendiri).
+- Isi tiap seksi: gabungkan dari semua bagian tanpa dobel; angka & tabel jangan dikurangi; linimasa diurutkan menurut waktu; buang pertanyaan yang ternyata sudah terjawab di bagian lain.${t && t.seksi.some(s => s[1] === 'pesan') ? ' Draf pesan ditulis ulang untuk keseluruhan.' : ''}
 - penutup: hal terpenting berikutnya, 1 kalimat pendek.
 
 DATA:
@@ -355,7 +357,7 @@ function gabungLokal(list) { // cadangan kalau AI gagal menyatukan: gabungkan se
   const sk = {}; list.forEach(h => seksiDari(h).forEach(s => { const a = sk[s.judul] = sk[s.judul] || { judul: s.judul, bentuk: s.bentuk, isi: [] }; a.isi.push(...s.isi); }));
   const poin = []; for (let i = 0; poin.length < 10 && list.some(h => h.poin[i]); i++) list.forEach(h => h.poin[i] && poin.length < 10 && poin.push(h.poin[i]));
   return { judul: list[0].judul, inti: list[0].inti, penutup: list[list.length - 1].penutup, bagian: unik(list.flatMap(h => h.bagian), x => x).slice(0, 6),
-    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.label + x.teks).slice(0, s.bentuk === 'angka' ? 40 : 15) })) };
+    poin, tugas: unik(list.flatMap(h => h.tugas), t => t.apa), seksi: Object.values(sk).map(s => ({ ...s, isi: unik(s.isi, x => x.label + x.teks).slice(0, s.bentuk === 'angka' ? 70 : 20) })) };
 }
 function seksiDari(h) { // ringkasan versi lama (sebelum ada template) diubah ke bentuk seksi
   if (Array.isArray(h.seksi)) return h.seksi.map(s => s.bentuk !== 'ayat' ? s : { ...s, isi: s.isi.map(x => ({ ...x, ket: /dibaca/i.test(x.ket || '') ? 'dibacakan' : 'cek di Alkitab' })) }); // keterangan ayat hanya boleh dua ini
@@ -373,7 +375,7 @@ function rapikan(o) { // bersihkan & batasi isi dari AI sebelum disimpan
     bagian: bagian.length ? bagian : ['Umum'],
     poin: arr(o.poin, 12).map(p => ({ bagian: potong(p.bagian, 30), judul: potong(p.judul, 60), isi: potong(p.isi, 320), ikon: ILL[p.ikon] ? p.ikon : 'ide' })).filter(p => p.judul),
     tugas: arr(o.tugas, 25).map(t => ({ id: uid(), apa: potong(t.apa, 200), siapa: potong(t.siapa, 40), kapan: potong(t.kapan, 40), selesai: t.selesai === true })).filter(t => t.apa),
-    seksi: arr(seksiDari(o), 8).map(s => ({ judul: potong(s.judul, 40), bentuk: BENTUK.includes(s.bentuk) ? s.bentuk : 'daftar', isi: arr(s.isi, s.bentuk === 'angka' ? 40 : 15).map(x => ({ teks: potong(x.teks, s.bentuk === 'pesan' ? 1500 : 400), label: potong(x.label, 80), ket: potong(x.ket, 200) })).filter(x => x.teks && (s.bentuk !== 'istilah' || (x.label && x.label.trim().toLowerCase() !== x.teks.trim().toLowerCase()))) })).filter(s => s.judul && s.isi.length)
+    seksi: arr(seksiDari(o), 9).map(s => ({ judul: potong(s.judul, 40), bentuk: BENTUK.includes(s.bentuk) ? s.bentuk : 'daftar', isi: arr(s.isi, s.bentuk === 'angka' ? 70 : 20).map(x => ({ teks: potong(x.teks, s.bentuk === 'pesan' ? 1500 : 400), label: potong(x.label, 80), ket: potong(x.ket, 200) })).filter(x => x.teks && (s.bentuk !== 'istilah' || (x.label && x.label.trim().toLowerCase() !== x.teks.trim().toLowerCase()))) })).filter(s => s.judul && s.isi.length)
   };
 }
 
